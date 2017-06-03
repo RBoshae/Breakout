@@ -13,6 +13,9 @@ unsigned volatile char PADDLE_PORTB;
 unsigned volatile char BALL_PORTA;
 unsigned volatile char BALL_PORTB;
 
+unsigned volatile char BRICK_PORTA;
+unsigned volatile char BRICK_PORTB;
+
 
 
 
@@ -23,13 +26,14 @@ typedef struct task {
 	int (*TickFct)(int); // Function to call for task's tick
 } task;
 
-task tasks[2];
+task tasks[4];
 
-const unsigned char tasksNum = 3;
-const unsigned long tasksPeriodGCD  = 100;
-const unsigned long periodBall = 200;
-const unsigned long periodPaddle = 100;
-const unsigned long periodOutput = 100;
+const unsigned char tasksNum = 4;
+const unsigned long tasksPeriodGCD  = 5;
+const unsigned long periodBall = 150;
+const unsigned long periodPaddle = 50;
+const unsigned long periodOutput = 5;
+const unsigned long periodBrick = 5;
 
 // ====================
 // PADDLE_TICK: PADDLE MOVEMENT ON LED matrix
@@ -186,7 +190,7 @@ int Ball_Tick(int state) {
 	
 	// === Local Variables ===
 	static unsigned char ball_row = 0x40; // ball row
-	static unsigned char ball_column = 0xFD; // controls ball movement
+	static unsigned char ball_column = 0xFB; // controls ball movement
 
 	unsigned char FLOOR = 0x40;
 	unsigned char CEILING = 0x01;
@@ -197,22 +201,22 @@ int Ball_Tick(int state) {
 	// === Transitions ===
 	switch (state) {
 		case B_START:
-		state = B_INIT;
+			state = B_INIT;
 		break;
 
 		case B_INIT:
-		state = B_PAUSE;
+			state = B_PAUSE;
 		break;
 
 		case B_PAUSE:
-		if (NES_button == (0x01 << 3))
-		{
-			state = B_UP_LEFT;
-		}
-		else
-		{
-			state = B_PAUSE;
-		}
+			if (NES_button == (0x01 << 3))
+			{
+				state = B_UP_LEFT;
+			}
+			else
+			{
+				state = B_PAUSE;
+			}
 		break;
 
 		case B_UP_LEFT:
@@ -321,9 +325,82 @@ int Ball_Tick(int state) {
 
 
 // ====================
+// BRICK_TICK: BALL MOVEMENT ON LED matrix
+// ====================
+
+enum Brick_States {BRICK_START, BRICK_INIT,BRICK_PAUSE, BRICK_DISPLAY};
+int Brick_Tick(int state) {
+	
+	// === Local Variables ===
+	static unsigned char brick_row = 0x07; // ball row
+	static unsigned char brick_column = 0x00; // controls ball movement
+
+	unsigned char NES_button = GetNESControllerButton();
+	
+	// === Transitions ===
+	switch (state) {
+		case BRICK_START:
+			state = BRICK_INIT;
+		break;
+
+		case BRICK_INIT:
+			state = BRICK_PAUSE;
+		break;
+
+		case BRICK_PAUSE:
+			if (NES_button == (0x01 << 3))
+			{
+				state = BRICK_DISPLAY;
+			}
+			else
+			{
+				state = BRICK_PAUSE;
+			}
+		break;
+
+		case  BRICK_DISPLAY:
+		break;
+		
+		default:
+			state = B_INIT;
+		break;
+	}
+	
+	// === Actions ===
+	switch (state) {
+		case BRICK_START:
+		break;
+
+		case BRICK_INIT:
+			brick_row = 0x07; // ball row
+			brick_column = 0x00; // controls ball movement
+		break;
+
+		case BRICK_PAUSE:
+		break;
+
+		case BRICK_DISPLAY:
+		break;
+
+		default:
+		break;
+	}
+	
+	BRICK_PORTA =  brick_row; // PORTA displays column pattern
+	BRICK_PORTB =  brick_column; // PORTB selects column to display pattern
+
+	//PORTA =  ball_row | PORTA_OUTPUT; // PORTA displays column pattern
+	//PORTB =  ball_column |PORTB_OUTPUT; // PORTB selects column to display pattern
+
+	return state;
+	
+};
+
+
+// ====================
 // OUTPUT_TICK:OUTPUT TO LED matrix
 // ====================
-enum O_States {O_START, O_INIT, O_PADDLE_OUTPUT, O_BALL_OUTPUT};
+enum O_States {O_START, O_INIT, O_PADDLE_OUTPUT, O_BALL_OUTPUT, O_BRICK_OUTPUT};
 int Output_Tick(int state) {
 
 	// === Local Variables ===
@@ -345,6 +422,10 @@ int Output_Tick(int state) {
 		break;
 
 		case O_BALL_OUTPUT:
+			state = O_BRICK_OUTPUT;
+		break;
+		
+		case O_BRICK_OUTPUT:
 			state = O_PADDLE_OUTPUT;
 		break;
 		
@@ -372,6 +453,11 @@ int Output_Tick(int state) {
 		case O_BALL_OUTPUT:
 			OUTPUT_A = BALL_PORTA;
 			OUTPUT_B = BALL_PORTB;
+		break;
+
+		case O_BRICK_OUTPUT:
+		OUTPUT_A = BRICK_PORTA;
+		OUTPUT_B = BRICK_PORTB;
 		break;
 			
 		default:
@@ -424,6 +510,12 @@ int main() {
 	tasks[i].period = periodOutput;
 	tasks[i].elapsedTime = tasks[i].period;
 	tasks[i].TickFct= &Output_Tick;
+	++i;
+	tasks[i].state = BRICK_INIT;
+	tasks[i].period = periodBrick;
+	tasks[i].elapsedTime = tasks[i].period;
+	tasks[i].TickFct= &Brick_Tick;
+	
 
  	TimerSet(tasksPeriodGCD);
  	TimerOn();
