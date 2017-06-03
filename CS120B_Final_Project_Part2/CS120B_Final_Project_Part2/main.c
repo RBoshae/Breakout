@@ -7,14 +7,17 @@
 // ====================
 // GLOBAL SHARED VARIABLES
 // ====================
-unsigned volatile char PADDLE_PORTA;
-unsigned volatile char PADDLE_PORTB;
+// unsigned volatile char PADDLE_PORTA;
+// unsigned volatile char PADDLE_PORTB;
+// 
+// unsigned volatile char BALL_PORTA;
+// unsigned volatile char BALL_PORTB;
+// 
+// unsigned volatile char BRICK_PORTA;
+// unsigned volatile char BRICK_PORTB;
 
-unsigned volatile char BALL_PORTA;
-unsigned volatile char BALL_PORTB;
-
-unsigned volatile char BRICK_PORTA;
-unsigned volatile char BRICK_PORTB;
+unsigned volatile char DISPLAY_PORTA[16];
+unsigned volatile char DISPLAY_PORTB[16];
 
 
 
@@ -29,10 +32,10 @@ typedef struct task {
 task tasks[4];
 
 const unsigned char tasksNum = 4;
-const unsigned long tasksPeriodGCD  = 5;
+const unsigned long tasksPeriodGCD  = 1;
 const unsigned long periodBall = 150;
 const unsigned long periodPaddle = 50;
-const unsigned long periodOutput = 5;
+const unsigned long periodOutput = 1;
 const unsigned long periodBrick = 5;
 
 // ====================
@@ -175,9 +178,10 @@ int Paddle_Tick(int state) {
 	// PORTA = PORTA_OUTPUT; // PORTA displays column pattern
 	// PORTB = PORTB_OUTPUT; // PORTB selects column to display pattern
 
-	PADDLE_PORTA = bottom_row;
-	PADDLE_PORTB = paddle_pos;
-	
+	//PADDLE_PORTA = bottom_row;
+	//PADDLE_PORTB = paddle_pos;
+	DISPLAY_PORTA[0] = bottom_row;
+	DISPLAY_PORTB[0] = paddle_pos;
 	return state;
 };
 
@@ -192,7 +196,7 @@ int Ball_Tick(int state) {
 	static unsigned char ball_row = 0x40; // ball row
 	static unsigned char ball_column = 0xFB; // controls ball movement
 
-	unsigned char FLOOR = 0x40;
+	unsigned char FLOOR = 0x80;
 	unsigned char CEILING = 0x01;
 	unsigned char LEFT_WALL = 0x7F;
 	unsigned char RIGHT_WALL = 0xFE;
@@ -220,14 +224,18 @@ int Ball_Tick(int state) {
 		break;
 
 		case B_UP_LEFT:
-		if (ball_column == LEFT_WALL)
-		{
-			state = B_UP_RIGHT;
-		}
-		else if (ball_row == CEILING)
-		{
-			state = B_DOWN_LEFT;
-		}
+			if ((ball_column == LEFT_WALL) && (ball_row != CEILING))
+			{
+				state = B_UP_RIGHT;
+			}
+			else if ((ball_column == LEFT_WALL) && (ball_row == CEILING))
+			{
+				state = B_DOWN_LEFT;
+			}
+			else if ((ball_row == CEILING) && (ball_column != LEFT_WALL))
+			{
+				state = B_DOWN_LEFT;
+			}
 		break;
 
 		case B_UP_RIGHT:
@@ -282,39 +290,42 @@ int Ball_Tick(int state) {
 		break;
 
 		case B_INIT:
-		ball_row = 0x40; // bottom row
-		ball_column = 0xFB; // controls left right movement
+			ball_row = 0x40; // bottom row
+			ball_column = 0xFB; // controls left right movement
 		break;
 
 		case B_PAUSE:
 		break;
 
 		case B_UP_LEFT:
-		ball_row = ball_row >> 1;
-		ball_column = (ball_column << 1) | 0x01;
+			ball_row = ball_row >> 1;
+			ball_column = (ball_column << 1) | 0x01;
 		break;
 
 		case B_DOWN_LEFT:
-		ball_row = ball_row << 1;
-		ball_column = (ball_column << 1) | 0x01;
+			ball_row = ball_row << 1;
+			ball_column = (ball_column << 1) | 0x01;
 		break;
 
 		case  B_UP_RIGHT:
-		ball_row = ball_row >> 1;
-		ball_column = (ball_column >> 1) | 0x80;
+			ball_row = ball_row >> 1;
+			ball_column = (ball_column >> 1) | 0x80;
 		break;
 
 		case B_DOWN_RIGHT:
-		ball_row = ball_row << 1;
-		ball_column = (ball_column >> 1) | 0x80;
+			ball_row = ball_row << 1;
+			ball_column = (ball_column >> 1) | 0x80;
 		break;
 		
 		default:
 		break;
 	}
+
+	DISPLAY_PORTA[1] =  ball_row; // PORTA displays column pattern
+	DISPLAY_PORTB[1] =  ball_column; // PORTB selects column to display pattern
 	
-	BALL_PORTA =  ball_row; // PORTA displays column pattern
-	BALL_PORTB =  ball_column; // PORTB selects column to display pattern
+	//BALL_PORTA =  ball_row; // PORTA displays column pattern
+	//BALL_PORTB =  ball_column; // PORTB selects column to display pattern
 
 	//PORTA =  ball_row | PORTA_OUTPUT; // PORTA displays column pattern
 	//PORTB =  ball_column |PORTB_OUTPUT; // PORTB selects column to display pattern
@@ -372,8 +383,11 @@ int Brick_Tick(int state) {
 		break;
 
 		case BRICK_INIT:
-			brick_row = 0x07; // ball row
-			brick_column = 0x00; // controls ball movement
+			for (int i = 2; i < 16; i++)
+			{
+				DISPLAY_PORTA[i] = brick_row;
+				DISPLAY_PORTB[i] = brick_column;
+			}
 		break;
 
 		case BRICK_PAUSE:
@@ -385,9 +399,16 @@ int Brick_Tick(int state) {
 		default:
 		break;
 	}
-	
-	BRICK_PORTA =  brick_row; // PORTA displays column pattern
-	BRICK_PORTB =  brick_column; // PORTB selects column to display pattern
+
+// 	for (unsigned char i = 2; i < 16; i++)
+// 	{
+// 		DISPLAY_PORTA[i] = brick_row;
+// 		DISPLAY_PORTB[i] = brick_column;
+// 
+// 	}
+		
+	// 	BRICK_PORTA =  brick_row; // PORTA displays column pattern
+	// 	BRICK_PORTB =  brick_column; // PORTB selects column to display pattern
 
 	//PORTA =  ball_row | PORTA_OUTPUT; // PORTA displays column pattern
 	//PORTB =  ball_column |PORTB_OUTPUT; // PORTB selects column to display pattern
@@ -400,12 +421,13 @@ int Brick_Tick(int state) {
 // ====================
 // OUTPUT_TICK:OUTPUT TO LED matrix
 // ====================
-enum O_States {O_START, O_INIT, O_PADDLE_OUTPUT, O_BALL_OUTPUT, O_BRICK_OUTPUT};
+enum O_States {O_START, O_INIT, O_DISPLAY_OUTPUT};
 int Output_Tick(int state) {
 
 	// === Local Variables ===
-		static unsigned char OUTPUT_A; // ball row
-		static unsigned char OUTPUT_B; // controls ball movement
+		//static unsigned char OUTPUT_A; // ball row
+		//static unsigned char OUTPUT_B; // controls ball movement
+		static unsigned char index = 0;
 	
 	// === Transitions ===
 	switch (state) {
@@ -414,19 +436,11 @@ int Output_Tick(int state) {
 		break;
 		
 		case O_INIT:
-			state = O_PADDLE_OUTPUT;
+			state = O_DISPLAY_OUTPUT;
 		break;
 
-		case O_PADDLE_OUTPUT:
-			state = O_BALL_OUTPUT;
-		break;
-
-		case O_BALL_OUTPUT:
-			state = O_BRICK_OUTPUT;
-		break;
-		
-		case O_BRICK_OUTPUT:
-			state = O_PADDLE_OUTPUT;
+		case O_DISPLAY_OUTPUT:
+			state = O_DISPLAY_OUTPUT;
 		break;
 		
 		default:
@@ -445,29 +459,25 @@ int Output_Tick(int state) {
 				//PORTB = 0xFF;
 		break;
 
-		case O_PADDLE_OUTPUT:
-			OUTPUT_A = PADDLE_PORTA;
-			OUTPUT_B = PADDLE_PORTB;
-		break;
+		case O_DISPLAY_OUTPUT:
 
-		case O_BALL_OUTPUT:
-			OUTPUT_A = BALL_PORTA;
-			OUTPUT_B = BALL_PORTB;
-		break;
+				PORTA = DISPLAY_PORTA[index];
+				PORTB = DISPLAY_PORTB[index];
 
-		case O_BRICK_OUTPUT:
-		OUTPUT_A = BRICK_PORTA;
-		OUTPUT_B = BRICK_PORTB;
+				if (index == 15)
+				{
+					index = 0;
+				} 
+				else
+				{
+					index++;
+				}
+							
 		break;
 			
 		default:
-			OUTPUT_A = 0x01;
-			OUTPUT_B = 0xF8;
 		break;
 	}
-
-	PORTA = OUTPUT_A;
-	PORTB = OUTPUT_B;
 	return state;
 };
 
@@ -493,28 +503,27 @@ int main() {
 	DDRA = 0xFF; PORTA = 0x00; // Initialize to output to PORT A
 	DDRC = 0x03; PORTC = 0x04;
 
-
-
 	unsigned char i = 0;
-	tasks[i].state = P_INIT;
+	tasks[i].state = P_START;
 	tasks[i].period = periodPaddle;
 	tasks[i].elapsedTime = tasks[i].period;
 	tasks[i].TickFct= &Paddle_Tick;
 	++i;
-	tasks[i].state = B_INIT;
+	tasks[i].state = B_START;
 	tasks[i].period = periodBall;
 	tasks[i].elapsedTime = tasks[i].period;
 	tasks[i].TickFct= &Ball_Tick;
 	++i;
-	tasks[i].state = O_INIT;
-	tasks[i].period = periodOutput;
-	tasks[i].elapsedTime = tasks[i].period;
-	tasks[i].TickFct= &Output_Tick;
-	++i;
-	tasks[i].state = BRICK_INIT;
+	tasks[i].state = BRICK_START;
 	tasks[i].period = periodBrick;
 	tasks[i].elapsedTime = tasks[i].period;
 	tasks[i].TickFct= &Brick_Tick;
+	++i;
+	tasks[i].state = O_START;
+	tasks[i].period = periodOutput;
+	tasks[i].elapsedTime = tasks[i].period;
+	tasks[i].TickFct= &Output_Tick;
+
 	
 
  	TimerSet(tasksPeriodGCD);
