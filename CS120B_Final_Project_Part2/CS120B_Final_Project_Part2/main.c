@@ -3,6 +3,7 @@
 #include "NES_Controller.h"
 #include "timer.h"
 
+#define ARRAY_SIZE 18
 
 // ====================
 // GLOBAL SHARED VARIABLES
@@ -16,8 +17,9 @@
 // unsigned volatile char BRICK_PORTA;
 // unsigned volatile char BRICK_PORTB;
 
-unsigned volatile char DISPLAY_PORTA[16];
-unsigned volatile char DISPLAY_PORTB[16];
+
+unsigned volatile char DISPLAY_PORTA[ARRAY_SIZE];
+unsigned volatile char DISPLAY_PORTB[ARRAY_SIZE];
 
 
 
@@ -36,7 +38,7 @@ const unsigned long tasksPeriodGCD  = 1;
 const unsigned long periodBall = 500;
 const unsigned long periodPaddle = 50;
 const unsigned long periodOutput = 1;
-const unsigned long periodBrick = 5;
+const unsigned long periodBrick = 50;
 
 // ====================
 // PADDLE_TICK: PADDLE MOVEMENT ON LED matrix
@@ -195,6 +197,7 @@ int Ball_Tick(int state) {
 	// === Local Variables ===
 	static unsigned char ball_row = 0x40; // ball row
 	static unsigned char ball_column = 0xFB; // controls ball movement
+	unsigned char ball_collision = 0x00;
 
 	unsigned char FLOOR = 0x80;
 	unsigned char CEILING = 0x01;
@@ -216,7 +219,7 @@ int Ball_Tick(int state) {
 			if (NES_button == (0x01 << 3))
 			{
 				//state = B_UP_LEFT;
-				state = B_UP_RIGHT;
+				state = B_UP_LEFT;
 			}
 			else
 			{
@@ -238,51 +241,102 @@ int Ball_Tick(int state) {
 				state = B_DOWN_LEFT;
 			}
 
-			// Collisions
-			unsigned char ball_collision = 0x00;
-
-			for (int i = 2; i < 16; i++)
+			// UP LEFT Collision Detection
+			for (int i = 2; i < ARRAY_SIZE; i++)
 			{
-				if ((DISPLAY_PORTA[i] & (ball_row << 1)) /*&& ~(DISPLAY_PORTB[i] == ~ball_column)*/)//questionable code
+				//Brick Directly Above
+				if ((DISPLAY_PORTA[i] & (ball_row >> 1)) && ((DISPLAY_PORTB[i] & ~ball_column) == 0))
 				{
-					/*ball_collision = 0x01;*/
-					state = B_DOWN_LEFT;
+					if (ball_column == 0x7F)
+					{
+						state = B_DOWN_RIGHT;	
+					}
+					else
+					{
+						state = B_DOWN_LEFT;
+					}
+					DISPLAY_PORTB[i] = 0xFF;
+					ball_collision = 0x01;
+					break;
 				}
 			}
-// 			if (ball_collision)
-// 			{
-// 				state = B_DOWN_LEFT;
-// 			}
-		break;
+			if (ball_collision == 0x00)
+			{
+				for (int i = 2; i < ARRAY_SIZE; i++)
+				{
+					// Brick Above Left, Not Directly Above
+					if ((DISPLAY_PORTA[i] & (ball_row >> 1)) && ((DISPLAY_PORTB[i] & (~ball_column)<<1) == 0))
+					{
+						state = B_DOWN_RIGHT;
+						DISPLAY_PORTB[i] = 0xFF;
+						break;
+					}
+				}
+				break;
+			}
+			
 
 		case B_UP_RIGHT:
-		if ((ball_column == RIGHT_WALL) && (ball_row != CEILING))
-		{
-			state = B_UP_LEFT;
-		}
-		else if ((ball_column == RIGHT_WALL) && (ball_row == CEILING))
-		{
-			state = B_DOWN_LEFT;
-		}
-		else if ((ball_row == CEILING) && (ball_column != RIGHT_WALL))
-		{
-			state = B_DOWN_RIGHT;
-		}
+			if ((ball_column == RIGHT_WALL) && (ball_row != CEILING))
+			{
+				state = B_UP_LEFT;
+			}
+			else if ((ball_column == RIGHT_WALL) && (ball_row == CEILING))
+			{
+				state = B_DOWN_LEFT;
+			}
+			else if ((ball_row == CEILING) && (ball_column != RIGHT_WALL))
+			{
+				state = B_DOWN_RIGHT;
+			}
+			
+			// UP Right Collision Detection
+			for (int i = 2; i < ARRAY_SIZE; i++)
+			{
+				// Brick Directly Above
+				if ((DISPLAY_PORTA[i] & (ball_row >> 1)) && ((DISPLAY_PORTB[i] & ~ball_column) == 0))
+				{
+					if (ball_column == 0xFE)
+					{
+						state = B_DOWN_LEFT;
+					}
+					else
+					{
+						state = B_DOWN_RIGHT;
+					}
+					DISPLAY_PORTB[i] = 0xFF;
+					ball_collision = 0x01;
+					break;
+				}
+			}
+			if (ball_collision == 0x00)
+			{
+				for (int k = 2; k < ARRAY_SIZE; k++)
+				{
+					// Brick Above to the Right, not directly above
+					if ((DISPLAY_PORTA[k] & (ball_row >> 1)) && ((DISPLAY_PORTB[k] & (~ball_column)>>1) == 0))
+					{
+						state = B_DOWN_LEFT;
+						DISPLAY_PORTB[k] = 0xFF;
+						break;
+					}
+				}
+			}
 		break;
 
 		case  B_DOWN_LEFT:
-		if ((ball_row != FLOOR) && (ball_column == LEFT_WALL))
-		{
-			state = B_DOWN_RIGHT;
-		}
-		else if ((ball_row == FLOOR) && (ball_column == LEFT_WALL))
-		{
-			state = B_UP_RIGHT;
-		}
-		else if (ball_row == FLOOR)
-		{
-			state = B_UP_LEFT;
-		}
+			if ((ball_row != FLOOR) && (ball_column == LEFT_WALL))
+			{
+				state = B_DOWN_RIGHT;
+			}
+			else if ((ball_row == FLOOR) && (ball_column == LEFT_WALL))
+			{
+				state = B_UP_RIGHT;
+			}
+			else if (ball_row == FLOOR)
+			{
+				state = B_UP_LEFT;
+			}
 		break;
 
 		case  B_DOWN_RIGHT:
@@ -364,8 +418,8 @@ enum Brick_States {BRICK_START, BRICK_INIT,BRICK_PAUSE, BRICK_DISPLAY};
 int Brick_Tick(int state) {
 	
 	// === Local Variables ===
-	static unsigned char brick_row = 0x07; // ball row
-	static unsigned char brick_column = 0x00; // controls ball movement
+	//static unsigned char brick_row = 0x07; // ball row
+	//static unsigned char brick_column = 0x00; // controls ball movement
 
 	unsigned char NES_button = GetNESControllerButton();
 	
@@ -404,10 +458,28 @@ int Brick_Tick(int state) {
 		break;
 
 		case BRICK_INIT:
-			for (int i = 2; i < 16; i++)
+			for (int i = 2; i < ARRAY_SIZE; i++)
 			{
-				DISPLAY_PORTA[i] = brick_row;
-				DISPLAY_PORTB[i] = brick_column;
+				if (i < 10)
+				{
+					DISPLAY_PORTA[i] = 0x01;
+					DISPLAY_PORTB[i] = (0x7F >> (i-2)) | 0xFF<<(8-(i-2));  //Acts as a roll shift
+					
+
+					
+				}
+				else if ((i >= 10) && (i < 18))
+				{
+					DISPLAY_PORTA[i] = 0x02;
+					DISPLAY_PORTB[i] = (0x7F >> (i - 10)) | 0xFF<<(8-(i-10)); //Acts as a roll shift
+				}
+				else if ((i >= 18) && (i < 26))
+				{
+					DISPLAY_PORTA[i] = 0x04;
+					DISPLAY_PORTB[i] = (0x7F >> (i - 18)) | 0xFF<<(8-(i-18));
+					
+				}
+
 			}
 		break;
 
@@ -427,7 +499,7 @@ int Brick_Tick(int state) {
 // 		DISPLAY_PORTB[i] = brick_column;
 // 
 // 	}
-		
+// 		
 	// 	BRICK_PORTA =  brick_row; // PORTA displays column pattern
 	// 	BRICK_PORTB =  brick_column; // PORTB selects column to display pattern
 
@@ -448,7 +520,7 @@ int Output_Tick(int state) {
 	// === Local Variables ===
 		//static unsigned char OUTPUT_A; // ball row
 		//static unsigned char OUTPUT_B; // controls ball movement
-		static unsigned char index = 0;
+		static int index = 0;
 	
 	// === Transitions ===
 	switch (state) {
@@ -485,7 +557,7 @@ int Output_Tick(int state) {
 				PORTA = DISPLAY_PORTA[index];
 				PORTB = DISPLAY_PORTB[index];
 
-				if (index == 15)
+				if (index == (ARRAY_SIZE - 1))
 				{
 					index = 0;
 				} 
