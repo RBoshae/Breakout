@@ -33,7 +33,7 @@ task tasks[4];
 
 const unsigned char tasksNum = 4;
 const unsigned long tasksPeriodGCD  = 1;
-const unsigned long periodBall = 150;
+const unsigned long periodBall = 500;
 const unsigned long periodPaddle = 50;
 const unsigned long periodOutput = 1;
 const unsigned long periodBrick = 5;
@@ -215,7 +215,8 @@ int Ball_Tick(int state) {
 		case B_PAUSE:
 			if (NES_button == (0x01 << 3))
 			{
-				state = B_UP_LEFT;
+				//state = B_UP_LEFT;
+				state = B_UP_RIGHT;
 			}
 			else
 			{
@@ -236,6 +237,22 @@ int Ball_Tick(int state) {
 			{
 				state = B_DOWN_LEFT;
 			}
+
+			// Collisions
+			unsigned char ball_collision = 0x00;
+
+			for (int i = 2; i < 16; i++)
+			{
+				if ((DISPLAY_PORTA[i] & (ball_row << 1)) /*&& ~(DISPLAY_PORTB[i] == ~ball_column)*/)//questionable code
+				{
+					/*ball_collision = 0x01;*/
+					state = B_DOWN_LEFT;
+				}
+			}
+// 			if (ball_collision)
+// 			{
+// 				state = B_DOWN_LEFT;
+// 			}
 		break;
 
 		case B_UP_RIGHT:
@@ -254,9 +271,13 @@ int Ball_Tick(int state) {
 		break;
 
 		case  B_DOWN_LEFT:
-		if (ball_column == LEFT_WALL)
+		if ((ball_row != FLOOR) && (ball_column == LEFT_WALL))
 		{
 			state = B_DOWN_RIGHT;
+		}
+		else if ((ball_row == FLOOR) && (ball_column == LEFT_WALL))
+		{
+			state = B_UP_RIGHT;
 		}
 		else if (ball_row == FLOOR)
 		{
