@@ -190,13 +190,13 @@ int Paddle_Tick(int state) {
 // ====================
 // BALL_TICK: BALL MOVEMENT ON LED matrix
 // ====================
-
 enum B_States {B_START, B_INIT,B_PAUSE, B_UP, B_DOWN, B_UP_LEFT, B_UP_RIGHT, B_DOWN_LEFT, B_DOWN_RIGHT} state;
 int Ball_Tick(int state) {
 	
 	// === Local Variables ===
 	static unsigned char ball_row = 0x40; // ball row
 	static unsigned char ball_column = 0xFB; // controls ball movement
+
 	unsigned char ball_collision = 0x00;
 
 	unsigned char FLOOR = 0x80;
@@ -205,6 +205,7 @@ int Ball_Tick(int state) {
 	unsigned char RIGHT_WALL = 0xFE;
 	
 	unsigned char NES_button = GetNESControllerButton();
+	
 	// === Transitions ===
 	switch (state) {
 		case B_START:
@@ -218,7 +219,6 @@ int Ball_Tick(int state) {
 		case B_PAUSE:
 			if (NES_button == (0x01 << 3))
 			{
-				//state = B_UP_LEFT;
 				state = B_UP_LEFT;
 			}
 			else
@@ -241,10 +241,10 @@ int Ball_Tick(int state) {
 				state = B_DOWN_LEFT;
 			}
 
-			// UP LEFT Collision Detection
+			// === UP LEFT Collision Detection ===
 			for (int i = 2; i < ARRAY_SIZE; i++)
 			{
-				//Brick Directly Above
+				//Brick Directly Above -- works
 				if ((DISPLAY_PORTA[i] & (ball_row >> 1)) && ((DISPLAY_PORTB[i] & ~ball_column) == 0))
 				{
 					if (ball_column == 0x7F)
@@ -255,33 +255,32 @@ int Ball_Tick(int state) {
 					{
 						state = B_DOWN_LEFT;
 					}
-					DISPLAY_PORTB[i] = 0xFF;
+					DISPLAY_PORTA[i] = 0x00;
+					DISPLAY_PORTB[i] = 0x00;
 					ball_collision = 0x01;
 					break;
 				}
 			}
-			if (ball_collision == 0x00)
-			{
-				for (int i = 2; i < ARRAY_SIZE; i++)
+			
+			// Brick Above Left, Not Directly Above
+			if(ball_collision == 0x00){
+				for (int h = 2; h < ARRAY_SIZE; h++)
 				{
-					// Brick Above Left, Not Directly Above
-					if ((DISPLAY_PORTA[i] & (ball_row >> 1)) && ((DISPLAY_PORTB[i] & (~ball_column)<<1) == 0))
+				
+					if ((DISPLAY_PORTA[h] & (ball_row >> 1)) && ((DISPLAY_PORTB[h] & ((~ball_column)<<1)) == 0))
 					{
 						state = B_DOWN_RIGHT;
-						DISPLAY_PORTB[i] = 0xFF;
+						DISPLAY_PORTA[h] = 0x00;
+						DISPLAY_PORTB[h] = 0x00;
 						break;
 					}
 				}
-				break;
 			}
-			
+
+		break;	
 
 		case B_UP_RIGHT:
-			if ((ball_column == RIGHT_WALL) && (ball_row != CEILING))
-			{
-				state = B_UP_LEFT;
-			}
-			else if ((ball_column == RIGHT_WALL) && (ball_row == CEILING))
+			if ((ball_row == CEILING) && (ball_column == RIGHT_WALL))
 			{
 				state = B_DOWN_LEFT;
 			}
@@ -289,8 +288,12 @@ int Ball_Tick(int state) {
 			{
 				state = B_DOWN_RIGHT;
 			}
+			else if ((ball_row != CEILING) && (ball_column == RIGHT_WALL))
+			{
+				state = B_UP_LEFT;
+			}
 			
-			// UP Right Collision Detection
+			// === UP RIGHT Collision Detection ===
 			for (int i = 2; i < ARRAY_SIZE; i++)
 			{
 				// Brick Directly Above
@@ -304,24 +307,31 @@ int Ball_Tick(int state) {
 					{
 						state = B_DOWN_RIGHT;
 					}
-					DISPLAY_PORTB[i] = 0xFF;
+					DISPLAY_PORTA[i] = 0x00;
+					DISPLAY_PORTB[i] = 0x00;
 					ball_collision = 0x01;
 					break;
 				}
 			}
+			
+			// Brick Above to the Right, not directly above
 			if (ball_collision == 0x00)
 			{
 				for (int k = 2; k < ARRAY_SIZE; k++)
 				{
-					// Brick Above to the Right, not directly above
-					if ((DISPLAY_PORTA[k] & (ball_row >> 1)) && ((DISPLAY_PORTB[k] & (~ball_column)>>1) == 0))
+					if (  (DISPLAY_PORTA[k] & (ball_row >> 1)) && ((((ball_column>>1) | 0x80) & DISPLAY_PORTB[k]) == DISPLAY_PORTB[k] ))
 					{
 						state = B_DOWN_LEFT;
-						DISPLAY_PORTB[k] = 0xFF;
+						DISPLAY_PORTA[k] = 0x00;
+						DISPLAY_PORTB[k] = 0x00;
 						break;
 					}
 				}
 			}
+				
+			
+			
+			
 		break;
 
 		case  B_DOWN_LEFT:
@@ -373,8 +383,8 @@ int Ball_Tick(int state) {
 		break;
 
 		case B_UP_LEFT:
-			ball_row = ball_row >> 1;
-			ball_column = (ball_column << 1) | 0x01;
+			ball_row = ball_row >> 1;                 // Ex. 0100 0000 -> 0010 0000
+			ball_column = (ball_column << 1) | 0x01;  // Ex. 1111 1011 -> 1111 0111
 		break;
 
 		case B_DOWN_LEFT:
@@ -383,8 +393,8 @@ int Ball_Tick(int state) {
 		break;
 
 		case  B_UP_RIGHT:
-			ball_row = ball_row >> 1;
-			ball_column = (ball_column >> 1) | 0x80;
+			ball_row = ball_row >> 1;                // Ex. 0100 0000 -> 0010 0000
+			ball_column = (ball_column >> 1) | 0x80; // Ex. 1111 1011 -> 1111 1101
 		break;
 
 		case B_DOWN_RIGHT:
@@ -396,15 +406,9 @@ int Ball_Tick(int state) {
 		break;
 	}
 
-	DISPLAY_PORTA[1] =  ball_row; // PORTA displays column pattern
+	DISPLAY_PORTA[1] =  ball_row;    // PORTA displays column pattern
 	DISPLAY_PORTB[1] =  ball_column; // PORTB selects column to display pattern
 	
-	//BALL_PORTA =  ball_row; // PORTA displays column pattern
-	//BALL_PORTB =  ball_column; // PORTB selects column to display pattern
-
-	//PORTA =  ball_row | PORTA_OUTPUT; // PORTA displays column pattern
-	//PORTB =  ball_column |PORTB_OUTPUT; // PORTB selects column to display pattern
-
 	return state;
 	
 };
@@ -464,21 +468,19 @@ int Brick_Tick(int state) {
 				{
 					DISPLAY_PORTA[i] = 0x01;
 					DISPLAY_PORTB[i] = (0x7F >> (i-2)) | 0xFF<<(8-(i-2));  //Acts as a roll shift
-					
-
-					
+			
 				}
 				else if ((i >= 10) && (i < 18))
 				{
 					DISPLAY_PORTA[i] = 0x02;
 					DISPLAY_PORTB[i] = (0x7F >> (i - 10)) | 0xFF<<(8-(i-10)); //Acts as a roll shift
 				}
-				else if ((i >= 18) && (i < 26))
-				{
-					DISPLAY_PORTA[i] = 0x04;
-					DISPLAY_PORTB[i] = (0x7F >> (i - 18)) | 0xFF<<(8-(i-18));
-					
-				}
+// 				else if ((i >= 18) && (i < 26))
+// 				{
+// 					DISPLAY_PORTA[i] = 0x04;
+// 					DISPLAY_PORTB[i] = (0x7F >> (i - 18)) | 0xFF<<(8-(i-18));
+// 					
+// 				}
 
 			}
 		break;
@@ -492,19 +494,6 @@ int Brick_Tick(int state) {
 		default:
 		break;
 	}
-
-// 	for (unsigned char i = 2; i < 16; i++)
-// 	{
-// 		DISPLAY_PORTA[i] = brick_row;
-// 		DISPLAY_PORTB[i] = brick_column;
-// 
-// 	}
-// 		
-	// 	BRICK_PORTA =  brick_row; // PORTA displays column pattern
-	// 	BRICK_PORTB =  brick_column; // PORTB selects column to display pattern
-
-	//PORTA =  ball_row | PORTA_OUTPUT; // PORTA displays column pattern
-	//PORTB =  ball_column |PORTB_OUTPUT; // PORTB selects column to display pattern
 
 	return state;
 	
@@ -548,8 +537,6 @@ int Output_Tick(int state) {
 		break;
 			
 		case O_INIT:
-				//PORTA = 0x00;
-				//PORTB = 0xFF;
 		break;
 
 		case O_DISPLAY_OUTPUT:
@@ -565,7 +552,6 @@ int Output_Tick(int state) {
 				{
 					index++;
 				}
-							
 		break;
 			
 		default:
@@ -625,8 +611,6 @@ int main() {
 	while(1)
 	{
 		while (!TimerFlag);
-		TimerFlag = 0;
-			
-		
+		TimerFlag = 0;			
 	}
 }
