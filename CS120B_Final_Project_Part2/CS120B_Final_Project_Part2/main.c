@@ -2,6 +2,7 @@
 #include <avr/sleep.h>
 #include "NES_Controller.h"
 #include "timer.h"
+#include "io.c"
 
 #define ARRAY_SIZE 18
 
@@ -191,10 +192,13 @@ int Paddle_Tick(int state) {
 // BALL_TICK: BALL MOVEMENT ON LED matrix
 // ====================
 enum B_States {B_START, B_INIT,B_PAUSE, B_UP, B_DOWN, B_UP_LEFT, B_UP_RIGHT, B_DOWN_LEFT, B_DOWN_RIGHT} state;
+
+
+
 int Ball_Tick(int state) {
 	
 	// === Local Variables ===
-	static unsigned char ball_row = 0x40; // ball row
+	static unsigned char ball_row = 0x40;    // ball row
 	static unsigned char ball_column = 0xFB; // controls ball movement
 
 	unsigned char ball_collision = 0x00;
@@ -206,6 +210,30 @@ int Ball_Tick(int state) {
 	
 	unsigned char NES_button = GetNESControllerButton();
 	
+	// === Local Functions ===
+	void paddle_collision_detection(){
+		if (ball_row == (FLOOR>>1))
+		{
+
+			// Contact with left side of paddle
+			if (   ((ball_column & DISPLAY_PORTB[0]) == ball_column)    &&    ((((ball_column>>1)|0x80) & DISPLAY_PORTB[0]) == ball_column)    &&    ((((ball_column>>2)|0xC0) & DISPLAY_PORTB[0]) == ball_column)    )
+			{
+				state = B_UP_LEFT;
+			}
+// 			// Contact with center of paddle
+// 			else if (   ((ball_column & DISPLAY_PORTB[0]) == ball_column)    &&    ((((ball_column>>1)|0x80) & DISPLAY_PORTB[0]) == ball_column)    &&    !((((ball_column>>2)|0xC0) & DISPLAY_PORTB[0]) == ball_column)    )
+// 			{
+// 				state = B_UP;
+// 			}
+// 			// Contact with right side of paddle
+// 			else if (   ((ball_column & DISPLAY_PORTB[0]) == ball_column)    &&    !((((ball_column>>1)|0x80) & DISPLAY_PORTB[0]) == ball_column)    &&    !((((ball_column>>2)|0xC0) & DISPLAY_PORTB[0]) == ball_column)    )
+// 			{
+// 				state = B_UP_RIGHT;
+// 			}
+		}
+
+	}
+
 	// === Transitions ===
 	switch (state) {
 		case B_START:
@@ -225,6 +253,54 @@ int Ball_Tick(int state) {
 			{
 				state = B_PAUSE;
 			}
+		break;
+
+		case B_UP:
+			if (ball_row == CEILING)
+			{
+				state = B_DOWN;
+			}
+			// === UP Collision Detection ===
+			for (int i = 2; i < ARRAY_SIZE; i++)
+			{
+				//Brick Directly Above -- works
+				if ((DISPLAY_PORTA[i] & (ball_row >> 1)) && ((DISPLAY_PORTB[i] & ~ball_column) == 0))
+				{
+					state = B_DOWN;
+					DISPLAY_PORTA[i] = 0x00;
+					DISPLAY_PORTB[i] = 0x00;
+					ball_collision = 0x01;
+					break;
+				}
+			}
+		break;
+
+		case B_DOWN:
+			if (ball_row == FLOOR)
+			{
+				state = B_UP;
+			}
+// 			// === DOWN PADDLE Collision Detection ===
+			paddle_collision_detection();
+// 			if (ball_row == 0x40)
+// 			{
+// 				// Contact with left side of paddle
+// 				if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
+// 				{
+// 					state = B_UP_LEFT;
+// 				}
+// 				// Contact with center of paddle
+// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
+// 				{
+// 					state = B_UP;
+// 				}
+// 				// Contact with right side of paddle
+// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
+// 				{
+// 					state = B_UP_RIGHT;
+// 				}
+// 					
+// 			}
 		break;
 
 		case B_UP_LEFT:
@@ -328,10 +404,6 @@ int Ball_Tick(int state) {
 					}
 				}
 			}
-				
-			
-			
-			
 		break;
 
 		case  B_DOWN_LEFT:
@@ -347,22 +419,69 @@ int Ball_Tick(int state) {
 			{
 				state = B_UP_LEFT;
 			}
+
+
+// 			// === DOWN LEFT PADDLE Collision Detection ===
+			paddle_collision_detection();
+// 			if (ball_row == 0x40)
+// 			{
+// 				// Contact with left side of paddle
+// 				if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
+// 				{
+// 					state = B_UP_LEFT;
+// 				}
+// 				// Contact with center of paddle
+// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
+// 				{
+// 					state = B_UP;
+// 				}
+// 				// Contact with right side of paddle
+// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
+// 				{
+// 					state = B_UP_RIGHT;
+// 				}	
+// 			}
+
 		break;
 
 		case  B_DOWN_RIGHT:
-		if ((ball_column == RIGHT_WALL) && !(ball_row == FLOOR))
-		{
-			state = B_DOWN_LEFT;
-		}
-		else if ((ball_column == RIGHT_WALL) && (ball_row == FLOOR))
-		{
-			state = B_UP_LEFT;
-		}
-		else if (!(ball_column == RIGHT_WALL) && (ball_row == FLOOR))
-		{
-			state = B_UP_RIGHT;
-		}
+			if ((ball_column == RIGHT_WALL) && !(ball_row == FLOOR))
+			{
+				state = B_DOWN_LEFT;
+			}
+			else if ((ball_column == RIGHT_WALL) && (ball_row == FLOOR))
+			{
+				state = B_UP_LEFT;
+			}
+			else if (!(ball_column == RIGHT_WALL) && (ball_row == FLOOR))
+			{
+				state = B_UP_RIGHT;
+			}
+		
+// 			// === DOWN RIGHT PADDLE Collision Detection ===
+			paddle_collision_detection();
+// 			if (ball_row == 0x40)
+// 			{
+// 				// Contact with left side of paddle
+// 				if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
+// 				{
+// 					state = B_UP_LEFT;
+// 				}
+// 				// Contact with center of paddle
+// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
+// 				{
+// 					state = B_UP;
+// 				}
+// 				// Contact with right side of paddle
+// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
+// 				{
+// 					state = B_UP_RIGHT;
+// 				}
+// 				
+// 			}
 		break;
+
+
 		
 		default:
 		state = B_INIT;
@@ -382,6 +501,14 @@ int Ball_Tick(int state) {
 		case B_PAUSE:
 		break;
 
+		case B_UP:
+			ball_row = ball_row >> 1; // bottom row
+		break;
+
+		case B_DOWN:
+			ball_row = ball_row<<1; // bottom row
+		break;
+		
 		case B_UP_LEFT:
 			ball_row = ball_row >> 1;                 // Ex. 0100 0000 -> 0010 0000
 			ball_column = (ball_column << 1) | 0x01;  // Ex. 1111 1011 -> 1111 0111
@@ -578,9 +705,11 @@ void TimerISR() {
 
 int main() {
 
-	DDRB = 0xFF; PORTB = 0x00;
 	DDRA = 0xFF; PORTA = 0x00; // Initialize to output to PORT A
-	DDRC = 0x03; PORTC = 0x04;
+	DDRB = 0xFF; PORTB = 0x00;
+	//DDRC = 0x03; PORTC = 0x04; // Before LCD implementation
+	DDRC = 0xFB; PORTC = 0x04; // LCD control lines on Pin 4 and Pin 5. NES Outputs on Pin 1 and Pin 2. NES Read on Pin 3
+	DDRD = 0xFF; PORTD = 0x00; // LCD data lines
 
 	unsigned char i = 0;
 	tasks[i].state = P_START;
@@ -608,8 +737,15 @@ int main() {
  	TimerSet(tasksPeriodGCD);
  	TimerOn();
 	
+	   // Initializes the LCD display
+	   	LCD_init();
+	   	LCD_Cursor(0x01);
+		//LCD_DisplayString(1, "Systems Online.");
+		LCD_DisplayString(1, "Go to sleep now.");
+
 	while(1)
 	{
+		
 		while (!TimerFlag);
 		TimerFlag = 0;			
 	}
