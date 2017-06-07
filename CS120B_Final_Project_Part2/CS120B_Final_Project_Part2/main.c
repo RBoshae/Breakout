@@ -4,13 +4,19 @@
 #include "timer.h"
 #include "io.c"
 
-#define ARRAY_SIZE 18
+#define ARRAY_SIZE 26
+
+unsigned char FLOOR = 0x80;
+unsigned char CEILING = 0x01;
+unsigned char LEFT_WALL = 0x7F;
+unsigned char RIGHT_WALL = 0xFE;
 
 // ====================
 // GLOBAL SHARED VARIABLES
 // ====================
 unsigned volatile char DISPLAY_PORTA[ARRAY_SIZE];
 unsigned volatile char DISPLAY_PORTB[ARRAY_SIZE];
+unsigned volatile char SCORE = 0; 
 
 
 
@@ -22,14 +28,16 @@ typedef struct task {
 	int (*TickFct)(int); // Function to call for task's tick
 } task;
 
-task tasks[4];
+task tasks[5];
 
-const unsigned char tasksNum = 4;
+const unsigned char tasksNum = 5;
 const unsigned long tasksPeriodGCD  = 1;
 const unsigned long periodBall = 200;
 const unsigned long periodPaddle = 50;
 const unsigned long periodOutput = 1;
 const unsigned long periodBrick = 50;
+const unsigned long periodLCDOutput = 800; // Same period as the ball
+
 
 // ====================
 // PADDLE_TICK: PADDLE MOVEMENT ON LED matrix
@@ -48,36 +56,37 @@ int Paddle_Tick(int state) {
 	// === Transitions ===
 	switch (state) {
 		case P_START:
-		state = P_INIT;
+			state = P_INIT;
 		break;
-		
-		case P_PAUSE:
-		if (NES_button == (0x01 << 3))
-		{
-			state = P_WAIT;
-		}
-		else
-		{
-			state = P_PAUSE;
-		}
-		break;
+	
 		case P_INIT:
 			state = P_WAIT;
 		break;
-
+		
+		case P_PAUSE:
+			if (NES_button == (0x01 << 3))
+			{
+				state = P_WAIT;
+			}
+			else
+			{
+				state = P_PAUSE;
+			}
+		break;
+		
 		case P_WAIT:
-		if (NES_button == (0x01 << 6))
-		{
-			state = P_MOVE_LEFT;
-		}
-		else if (NES_button ==  (0x01 << 7))
-		{
-			state = P_MOVE_RIGHT;
-		}
-		else
-		{
-			state = P_WAIT;
-		}
+			if (NES_button == (0x01 << 6))
+			{
+				state = P_MOVE_LEFT;
+			}
+			else if (NES_button ==  (0x01 << 7))
+			{
+				state = P_MOVE_RIGHT;
+			}
+			else
+			{
+				state = P_WAIT;
+			}
 		break;
 
 		case P_MOVE_LEFT:
@@ -165,14 +174,6 @@ int Paddle_Tick(int state) {
 		break;
 	}
 
-	//PORTA_OUTPUT = bottom_row;
-	//PORTB_OUTPUT = paddle_pos;
-
-	// PORTA = PORTA_OUTPUT; // PORTA displays column pattern
-	// PORTB = PORTB_OUTPUT; // PORTB selects column to display pattern
-
-	//PADDLE_PORTA = bottom_row;
-	//PADDLE_PORTB = paddle_pos;
 	DISPLAY_PORTA[0] = bottom_row;
 	DISPLAY_PORTB[0] = paddle_pos;
 	return state;
@@ -183,8 +184,6 @@ int Paddle_Tick(int state) {
 // ====================
 enum B_States {B_START, B_INIT,B_PAUSE, B_UP, B_DOWN, B_UP_LEFT, B_UP_RIGHT, B_DOWN_LEFT, B_DOWN_RIGHT} state;
 
-
-
 int Ball_Tick(int state) {
 	
 	// === Local Variables ===
@@ -193,14 +192,20 @@ int Ball_Tick(int state) {
 
 	unsigned char ball_collision = 0x00;
 
-	unsigned char FLOOR = 0x80;
-	unsigned char CEILING = 0x01;
-	unsigned char LEFT_WALL = 0x7F;
-	unsigned char RIGHT_WALL = 0xFE;
+
 	
 	unsigned char NES_button = GetNESControllerButton();
 	
 	// === Local Functions ===
+	void turn_off_LED(int LED_index){
+		if ((LED_index >=0) && (LED_index < ARRAY_SIZE))
+		{
+			DISPLAY_PORTA[LED_index] = 0x00;
+			DISPLAY_PORTB[LED_index] = 0x00;
+		}
+
+	}
+
 	void paddle_collision_detection(){
 		
 		// ball is in the second row
@@ -229,9 +234,16 @@ int Ball_Tick(int state) {
 					{
 						if (state == B_DOWN_LEFT)
 						{
-							state = B_UP_RIGHT;
-							collision_point = 0x08;
-							break;
+							if (ball_column == RIGHT_WALL)
+							{
+								state = B_UP_LEFT;
+							}
+							else
+							{
+								state = B_UP_RIGHT;
+								collision_point = 0x08;
+								break;
+							}
 						}
 						else
 						{
@@ -244,6 +256,10 @@ int Ball_Tick(int state) {
 					{
 						if (state == B_DOWN_RIGHT)
 						{
+							if (ball_column == LEFT_WALL)
+							{
+								state = B_UP_LEFT;
+							}
 							state = B_UP_LEFT;
 							collision_point = 0x08;
 							break;
@@ -293,13 +309,9 @@ int Ball_Tick(int state) {
 			else if (collision_point == 0x08)
 			{
 				//do nothing
-				LCD_Cursor(0x01);
-				LCD_WriteData('0'+ collision_point);
 			}
 			else
 			{
-				LCD_Cursor(0x01);
-				LCD_WriteData('0'+ collision_point);
 				state = B_PAUSE;
 			}
 		}
@@ -331,7 +343,7 @@ int Ball_Tick(int state) {
 			{
 				state = B_DOWN;
 			}
-			// === UP Collision Detection ===
+			// === UP Brick Collision Detection ===
 			for (int i = 2; i < ARRAY_SIZE; i++)
 			{
 				//Brick Directly Above -- works
@@ -377,13 +389,22 @@ int Ball_Tick(int state) {
 				state = B_DOWN;  // Debugging
 			}
 
-			// === UP LEFT Brick Collision Detection ===
+			// === UP-LEFT Brick Collision Detection ===
 			for (int i = 2; i < ARRAY_SIZE; i++)
 			{
-				//Brick Directly Above
+				// Brick Directly Above
+				//	Example of what should evaluate to TRUE
+				//	DISPLAY_PORTB[h] -> XXXX X0XX  // X - don't care
+				//	ball_column      -> 1111 1011  // 1 - LED is OFF
+				//	                               // 0 - LED is ON
+				//
+				//	Example of what should evaluate to FALSE
+				//	DISPLAY_PORTB[h] -> XXXX X1XX  // X - don't care
+				//	ball_column      -> 1111 1011  // 1 - LED is OFF
+				//
 				if ((DISPLAY_PORTA[i] & (ball_row >> 1)) && ((DISPLAY_PORTB[i] & ~ball_column) == 0))
 				{
-					if (ball_column == 0x7F)
+					if (ball_column == LEFT_WALL)
 					{
 						state = B_DOWN_RIGHT;	
 					}
@@ -391,28 +412,48 @@ int Ball_Tick(int state) {
 					{
 						state = B_DOWN_LEFT;
 					}
-					DISPLAY_PORTA[i] = 0x00;
-					DISPLAY_PORTB[i] = 0x00;
+					// Turn hit LED off
+					turn_off_LED(i);
 					ball_collision = 0x01;
+					SCORE++;
 					break;
 				}
 			}
 			
 			// Brick Above Left, Not Directly Above
-			if(ball_collision == 0x00){
+			if(ball_collision == 0x00)
+			{
 				for (int h = 2; h < ARRAY_SIZE; h++)
 				{
-				
-					if ((DISPLAY_PORTA[h] & (ball_row >> 1)) && ((DISPLAY_PORTB[h] & ((~ball_column)<<1)) == 0))
+					// Example of what should evaluate to TRUE
+					// DISPLAY_PORTB[h] -> XXXX 0XXX  // X - don't care 
+					// ball_column      -> 1111 1011  // 1 - LED is OFF
+					//                                // 0 - LED is ON
+					//
+					// Example of what should evaluate to FALSE
+					// DISPLAY_PORTB[h] -> XXXX 11XX  // X - don't care
+					// ball_column      -> 1111 1011  // 1 - LED is OFF
+					//                                // 0 - LED is ON
+
+					// Edge Cases -- Out of bounds issue. If the ball is in the corner it should bounce back. 
+					if ((ball_row == CEILING) && (ball_column == LEFT_WALL))
 					{
 						state = B_DOWN_RIGHT;
-						DISPLAY_PORTA[h] = 0x00;
-						DISPLAY_PORTB[h] = 0x00;
+					}
+					else if ((ball_row != CEILING) && (ball_column == LEFT_WALL))
+					{
+						state = B_UP_RIGHT;
+					}
+					// Expected Cases
+					else if ((DISPLAY_PORTA[h] & (ball_row >> 1)) && ((DISPLAY_PORTB[h] & ((~ball_column)<<1)) == 0))
+					{
+						state = B_DOWN_RIGHT;
+						turn_off_LED(h);
 						break;
+						SCORE++;
 					}
 				}
 			}
-
 		break;	
 
 		case B_UP_RIGHT:
@@ -429,13 +470,13 @@ int Ball_Tick(int state) {
 				state = B_DOWN_RIGHT;
 			}
 			
-			// === UP RIGHT BRICK Collision Detection ===
+			// === UP-RIGHT BRICK Collision Detection ===
 			for (int i = 2; i < ARRAY_SIZE; i++)
 			{
 				// Brick Directly Above
 				if ((DISPLAY_PORTA[i] & (ball_row >> 1)) && ((DISPLAY_PORTB[i] & ~ball_column) == 0))
 				{
-					if (ball_column == 0xFE)
+					if (ball_column == RIGHT_WALL)
 					{
 						state = B_DOWN_LEFT;
 					}
@@ -443,23 +484,46 @@ int Ball_Tick(int state) {
 					{
 						state = B_DOWN_RIGHT;
 					}
-					DISPLAY_PORTA[i] = 0x00;
-					DISPLAY_PORTB[i] = 0x00;
+
+					turn_off_LED(i);
 					ball_collision = 0x01;
+					SCORE++;
 					break;
 				}
 			}
-			
 			// Brick Above to the Right, not directly above
 			if (ball_collision == 0x00)
 			{
 				for (int k = 2; k < ARRAY_SIZE; k++)
 				{
-					if (  (DISPLAY_PORTA[k] & (ball_row >> 1)) && ((((ball_column>>1) | 0x80) & DISPLAY_PORTB[k]) == DISPLAY_PORTB[k] ))
+					
+					// Example of what should evaluate to TRUE
+					// DISPLAY_PORTB[k] -> XXXX X0XX  // X - don't care
+					// ball_column      -> 1111 0111  // 1 - LED is OFF
+					//                                // 0 - LED is ON
+					//
+					// Example of what should evaluate to FALSE
+					// DISPLAY_PORTB[k] -> XXXX XX1X  // X - don't care
+					// ball_column      -> 1111 1011  // 1 - LED is OFF
+					//                                // 0 - LED is ON
+
+					// Edge Cases
+					if ((ball_row == CEILING) && (ball_column == RIGHT_WALL))
 					{
 						state = B_DOWN_LEFT;
-						DISPLAY_PORTA[k] = 0x00;
-						DISPLAY_PORTB[k] = 0x00;
+					}
+					else if ((ball_row != CEILING) && (ball_column == RIGHT_WALL))
+					{
+						state = B_UP_LEFT;
+					}
+
+					// Expected Cases
+					//else if ((DISPLAY_PORTA[k] & (ball_row >> 1)) && ((((ball_column>>1) | 0x80) & DISPLAY_PORTB[k]) == DISPLAY_PORTB[k] ))
+					else if ((DISPLAY_PORTA[k] & (ball_row >> 1)) && ((DISPLAY_PORTB[k] & ~((ball_column>>1)|0x80)) == 0x00))
+					{
+						state = B_DOWN_LEFT;
+						turn_off_LED(k);
+						SCORE++;
 						break;
 					}
 				}
@@ -487,17 +551,17 @@ int Ball_Tick(int state) {
 		break;
 
 		case  B_DOWN_RIGHT:
-			if ((ball_column == RIGHT_WALL) && !(ball_row == FLOOR))
-			{
-				state = B_DOWN_LEFT;
-			}
-			else if ((ball_column == RIGHT_WALL) && (ball_row == FLOOR))
+			if ((ball_row == FLOOR) && (ball_column == RIGHT_WALL))
 			{
 				state = B_UP_LEFT;
 			}
-			else if (!(ball_column == RIGHT_WALL) && (ball_row == FLOOR))
+			else if ((ball_row == FLOOR) && (ball_column != RIGHT_WALL))
 			{
 				state = B_UP_RIGHT;
+			}
+			else if ((ball_row != FLOOR) && (ball_column == RIGHT_WALL))
+			{
+				state = B_DOWN_LEFT;
 			}
 		
  			// === DOWN RIGHT PADDLE Collision Detection ===
@@ -623,12 +687,12 @@ int Brick_Tick(int state) {
 					DISPLAY_PORTA[i] = 0x02;
 					DISPLAY_PORTB[i] = (0x7F >> (i - 10)) | 0xFF<<(8-(i-10)); //Acts as a roll shift
 				}
-// 				else if ((i >= 18) && (i < 26))
-// 				{
-// 					DISPLAY_PORTA[i] = 0x04;
-// 					DISPLAY_PORTB[i] = (0x7F >> (i - 18)) | 0xFF<<(8-(i-18));
-// 					
-// 				}
+				else if ((i >= 18) && (i < 26))
+				{
+					DISPLAY_PORTA[i] = 0x04;
+					DISPLAY_PORTB[i] = (0x7F >> (i - 18)) | 0xFF<<(8-(i-18));
+					
+				}
 
 			}
 		break;
@@ -649,14 +713,12 @@ int Brick_Tick(int state) {
 
 
 // ====================
-// OUTPUT_TICK:OUTPUT TO LED matrix
+// LED_MATRIX_OUTPUT_TICK:OUTPUT TO LED matrix
 // ====================
 enum O_States {O_START, O_INIT, O_DISPLAY_OUTPUT};
-int Output_Tick(int state) {
+int LED_MATRIX_OUTPUT_Tick(int state) {
 
 	// === Local Variables ===
-		//static unsigned char OUTPUT_A; // ball row
-		//static unsigned char OUTPUT_B; // controls ball movement
 		static int index = 0;
 	
 	// === Transitions ===
@@ -708,6 +770,81 @@ int Output_Tick(int state) {
 	return state;
 };
 
+// ====================
+// LCD_OUTPUT_TICK:OUTPUT TO LED matrix
+// ====================
+enum LCD_O_States {LCD_O_START, LCD_O_INIT, LCD_O_DISPLAY_SCORE};
+int LCD_OUTPUT_Tick(int state) {
+
+	// === Local Variables ===
+	unsigned static PREV_SCORE = 0x00;
+	unsigned static char SCORE_HUNDREDS_PLACE = 0x00;
+	unsigned static char SCORE_TENS_PLACE = 0x00;
+	unsigned static char SCORE_ONES_PLACE = 0x00;
+	unsigned static char count = 0x01;
+	// === Transitions ===
+	switch (state) {
+		case LCD_O_START:
+			state = LCD_O_INIT;
+		break;
+		
+		case LCD_O_INIT:
+			state = LCD_O_DISPLAY_SCORE;
+		break;
+
+		case LCD_O_DISPLAY_SCORE:
+			state = LCD_O_DISPLAY_SCORE;
+		break;
+		
+		default:
+			state = LCD_O_INIT;
+		break;
+	}
+	
+	// === Actions ===
+	switch (state)
+	{
+		case LCD_O_START:
+		break;
+		
+		case LCD_O_INIT:
+			LCD_ClearScreen();
+		break;
+
+		case LCD_O_DISPLAY_SCORE:
+			// Express SCORE by factors of 10
+			if (SCORE != PREV_SCORE)
+			{
+					count++;
+					if (SCORE_TENS_PLACE == 0x0A)
+					{
+						SCORE_HUNDREDS_PLACE++;
+						SCORE_TENS_PLACE = 0;
+					}
+					if (SCORE_ONES_PLACE == 0x0A)
+					{
+						SCORE_TENS_PLACE++;
+						SCORE_ONES_PLACE = 0;
+					}
+					SCORE_ONES_PLACE++;
+				LCD_Cursor(0x01);
+				LCD_DisplayString(1, "SCORE: ");
+				LCD_WriteData('0' + SCORE_HUNDREDS_PLACE);
+				LCD_WriteData('0' + SCORE_TENS_PLACE);
+				LCD_WriteData('0' + SCORE_ONES_PLACE);
+				LCD_WriteData('0'); // Make the score a little bigger =P
+				LCD_Cursor(0x30);
+
+				SCORE = PREV_SCORE;
+			}	
+		break;
+		
+		default:
+		break;
+	}
+	return state;
+};
+
 
 void TimerISR() {
 	unsigned char i;
@@ -751,7 +888,12 @@ int main() {
 	tasks[i].state = O_START;
 	tasks[i].period = periodOutput;
 	tasks[i].elapsedTime = tasks[i].period;
-	tasks[i].TickFct= &Output_Tick;
+	tasks[i].TickFct= &LED_MATRIX_OUTPUT_Tick;
+	++i;
+	tasks[i].state = LCD_O_START;
+	tasks[i].period = periodLCDOutput;
+	tasks[i].elapsedTime = tasks[i].period;
+	tasks[i].TickFct= &LCD_OUTPUT_Tick;
 
 	
 
