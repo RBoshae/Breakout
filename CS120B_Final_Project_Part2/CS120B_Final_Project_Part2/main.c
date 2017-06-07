@@ -9,16 +9,6 @@
 // ====================
 // GLOBAL SHARED VARIABLES
 // ====================
-// unsigned volatile char PADDLE_PORTA;
-// unsigned volatile char PADDLE_PORTB;
-// 
-// unsigned volatile char BALL_PORTA;
-// unsigned volatile char BALL_PORTB;
-// 
-// unsigned volatile char BRICK_PORTA;
-// unsigned volatile char BRICK_PORTB;
-
-
 unsigned volatile char DISPLAY_PORTA[ARRAY_SIZE];
 unsigned volatile char DISPLAY_PORTB[ARRAY_SIZE];
 
@@ -213,7 +203,7 @@ int Ball_Tick(int state) {
 	// === Local Functions ===
 	void paddle_collision_detection(){
 		
-
+		// ball is in the second row
 		if (ball_row == (FLOOR>>1))
 		{
 			unsigned char ballBit;
@@ -231,27 +221,67 @@ int Ball_Tick(int state) {
 					collision_point++; 	
 					
 				}
-				else if ((ballBit == 0) && (DISPLAY_PORTB_BIT == 0))
+				// Ball is either above left or above right from the paddle. 
+				else if ((ballBit == 0x00) && (DISPLAY_PORTB_BIT == 0x01))
+				{
+					// Ball is above right of paddle
+					if (( /*((ball_column>>(i+1)) == 0x01 ) &&*/((DISPLAY_PORTB[0]>>(i+1))& 0x01)) == 0x00 )
+					{
+						if (state == B_DOWN_LEFT)
+						{
+							state = B_UP_RIGHT;
+							collision_point = 0x08;
+							break;
+						}
+						else
+						{
+							collision_point = 0x09;
+							break;
+						}
+					}
+					// Ball is above left of paddle
+					if (( /*((ball_column>>(i+1)) == 0x01 ) &&*/((DISPLAY_PORTB[0]>>(i-1)) & 0x01)) == 0x00 )
+					{
+						if (state == B_DOWN_RIGHT)
+						{
+							state = B_UP_LEFT;
+							collision_point = 0x08;
+							break;
+						}
+						else
+						{
+							collision_point = 0x09;
+							break;
+						}
+					}
+
+				}
+				else if ((ballBit == 0x00) && (DISPLAY_PORTB_BIT == 0x00))
 				{
 					break;
 				}
 			}
 
+			// ===  Paddle Collision Conditions  ===
+			// Ball hits right side of the paddle
 			if (collision_point == 0x00)
 			{	
-				if (ball_column == 0xFE)
+				if (ball_column == RIGHT_WALL)
 				{
 					state = B_UP_LEFT;
 				}
-				state = B_UP_RIGHT;
-			}
-			else if (collision_point == 0x01)
-			{
-				if (state = B_DOWN_RIGHT)
+				else 
 				{
 					state = B_UP_RIGHT;
 				}
-				if (state = B_DOWN_LEFT)
+			}
+			else if (collision_point == 0x01)
+			{
+				if (state == B_DOWN_RIGHT)
+				{
+					state = B_UP_RIGHT;
+				}
+				if (state == B_DOWN_LEFT)
 				{
 					state = B_UP_LEFT;
 				}
@@ -260,7 +290,16 @@ int Ball_Tick(int state) {
 			{
 				state = B_UP_LEFT;
 			}
-			else{
+			else if (collision_point == 0x08)
+			{
+				//do nothing
+				LCD_Cursor(0x01);
+				LCD_WriteData('0'+ collision_point);
+			}
+			else
+			{
+				LCD_Cursor(0x01);
+				LCD_WriteData('0'+ collision_point);
 				state = B_PAUSE;
 			}
 		}
@@ -317,23 +356,31 @@ int Ball_Tick(int state) {
 		break;
 
 		case B_UP_LEFT:
-			if ((ball_column == LEFT_WALL) && (ball_row != CEILING))
+			if ((ball_column == LEFT_WALL) && (ball_row == CEILING))
+			{
+				state = B_DOWN_LEFT;
+			}
+			else if ((ball_column == LEFT_WALL) && (ball_row != CEILING))
 			{
 				state = B_UP_RIGHT;
 			}
-			else if ((ball_column == LEFT_WALL) && (ball_row == CEILING))
+			else if ((ball_column != LEFT_WALL) && (ball_row == CEILING))
 			{
 				state = B_DOWN_LEFT;
 			}
-			else if ((ball_row == CEILING) && (ball_column != LEFT_WALL))
+			else if ((ball_column != LEFT_WALL) && (ball_row != CEILING))
 			{
-				state = B_DOWN_LEFT;
+				state = B_UP_LEFT;
+			}
+			else
+			{
+				state = B_DOWN;  // Debugging
 			}
 
-			// === UP LEFT Collision Detection ===
+			// === UP LEFT Brick Collision Detection ===
 			for (int i = 2; i < ARRAY_SIZE; i++)
 			{
-				//Brick Directly Above -- works
+				//Brick Directly Above
 				if ((DISPLAY_PORTA[i] & (ball_row >> 1)) && ((DISPLAY_PORTB[i] & ~ball_column) == 0))
 				{
 					if (ball_column == 0x7F)
@@ -369,20 +416,20 @@ int Ball_Tick(int state) {
 		break;	
 
 		case B_UP_RIGHT:
-			if ((ball_row == CEILING) && (ball_column == RIGHT_WALL))
+			if ((ball_column == RIGHT_WALL) && (ball_row == CEILING))
 			{
 				state = B_DOWN_LEFT;
 			}
-			else if ((ball_row == CEILING) && (ball_column != RIGHT_WALL))
-			{
-				state = B_DOWN_RIGHT;
-			}
-			else if ((ball_row != CEILING) && (ball_column == RIGHT_WALL))
+			else if ((ball_column == RIGHT_WALL) && (ball_row != CEILING))
 			{
 				state = B_UP_LEFT;
 			}
+			else if ((ball_column != RIGHT_WALL) && (ball_row == CEILING))
+			{
+				state = B_DOWN_RIGHT;
+			}
 			
-			// === UP RIGHT BALL Collision Detection ===
+			// === UP RIGHT BRICK Collision Detection ===
 			for (int i = 2; i < ARRAY_SIZE; i++)
 			{
 				// Brick Directly Above
