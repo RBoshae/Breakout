@@ -36,7 +36,7 @@ task tasks[4];
 
 const unsigned char tasksNum = 4;
 const unsigned long tasksPeriodGCD  = 1;
-const unsigned long periodBall = 500;
+const unsigned long periodBall = 200;
 const unsigned long periodPaddle = 50;
 const unsigned long periodOutput = 1;
 const unsigned long periodBrick = 50;
@@ -212,26 +212,58 @@ int Ball_Tick(int state) {
 	
 	// === Local Functions ===
 	void paddle_collision_detection(){
+		
+
 		if (ball_row == (FLOOR>>1))
 		{
+			unsigned char ballBit;
+			unsigned char DISPLAY_PORTB_BIT;
+			unsigned char collision_point = 0x00;
 
-			// Contact with left side of paddle
-			if (   ((ball_column & DISPLAY_PORTB[0]) == ball_column)    &&    ((((ball_column>>1)|0x80) & DISPLAY_PORTB[0]) == ball_column)    &&    ((((ball_column>>2)|0xC0) & DISPLAY_PORTB[0]) == ball_column)    )
+
+			for (int i = 0; i < 8; i++)
+			{
+				ballBit = (ball_column >> i) & 0x01;
+				DISPLAY_PORTB_BIT = (DISPLAY_PORTB[0] >> i) & 0x01;
+
+				if ((ballBit == 0x01) && (DISPLAY_PORTB_BIT == 0x00))
+				{
+					collision_point++; 	
+					
+				}
+				else if ((ballBit == 0) && (DISPLAY_PORTB_BIT == 0))
+				{
+					break;
+				}
+			}
+
+			if (collision_point == 0x00)
+			{	
+				if (ball_column == 0xFE)
+				{
+					state = B_UP_LEFT;
+				}
+				state = B_UP_RIGHT;
+			}
+			else if (collision_point == 0x01)
+			{
+				if (state = B_DOWN_RIGHT)
+				{
+					state = B_UP_RIGHT;
+				}
+				if (state = B_DOWN_LEFT)
+				{
+					state = B_UP_LEFT;
+				}
+			}
+			else if (collision_point == 0x02) 
 			{
 				state = B_UP_LEFT;
 			}
-// 			// Contact with center of paddle
-// 			else if (   ((ball_column & DISPLAY_PORTB[0]) == ball_column)    &&    ((((ball_column>>1)|0x80) & DISPLAY_PORTB[0]) == ball_column)    &&    !((((ball_column>>2)|0xC0) & DISPLAY_PORTB[0]) == ball_column)    )
-// 			{
-// 				state = B_UP;
-// 			}
-// 			// Contact with right side of paddle
-// 			else if (   ((ball_column & DISPLAY_PORTB[0]) == ball_column)    &&    !((((ball_column>>1)|0x80) & DISPLAY_PORTB[0]) == ball_column)    &&    !((((ball_column>>2)|0xC0) & DISPLAY_PORTB[0]) == ball_column)    )
-// 			{
-// 				state = B_UP_RIGHT;
-// 			}
+			else{
+				state = B_PAUSE;
+			}
 		}
-
 	}
 
 	// === Transitions ===
@@ -280,27 +312,8 @@ int Ball_Tick(int state) {
 			{
 				state = B_UP;
 			}
-// 			// === DOWN PADDLE Collision Detection ===
-			paddle_collision_detection();
-// 			if (ball_row == 0x40)
-// 			{
-// 				// Contact with left side of paddle
-// 				if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
-// 				{
-// 					state = B_UP_LEFT;
-// 				}
-// 				// Contact with center of paddle
-// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
-// 				{
-// 					state = B_UP;
-// 				}
-// 				// Contact with right side of paddle
-// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
-// 				{
-// 					state = B_UP_RIGHT;
-// 				}
-// 					
-// 			}
+ 			// === DOWN PADDLE Collision Detection ===
+			paddle_collision_detection(); 
 		break;
 
 		case B_UP_LEFT:
@@ -369,7 +382,7 @@ int Ball_Tick(int state) {
 				state = B_UP_LEFT;
 			}
 			
-			// === UP RIGHT Collision Detection ===
+			// === UP RIGHT BALL Collision Detection ===
 			for (int i = 2; i < ARRAY_SIZE; i++)
 			{
 				// Brick Directly Above
@@ -421,26 +434,8 @@ int Ball_Tick(int state) {
 			}
 
 
-// 			// === DOWN LEFT PADDLE Collision Detection ===
+ 			// === DOWN LEFT PADDLE Collision Detection ===
 			paddle_collision_detection();
-// 			if (ball_row == 0x40)
-// 			{
-// 				// Contact with left side of paddle
-// 				if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
-// 				{
-// 					state = B_UP_LEFT;
-// 				}
-// 				// Contact with center of paddle
-// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
-// 				{
-// 					state = B_UP;
-// 				}
-// 				// Contact with right side of paddle
-// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
-// 				{
-// 					state = B_UP_RIGHT;
-// 				}	
-// 			}
 
 		break;
 
@@ -458,30 +453,9 @@ int Ball_Tick(int state) {
 				state = B_UP_RIGHT;
 			}
 		
-// 			// === DOWN RIGHT PADDLE Collision Detection ===
+ 			// === DOWN RIGHT PADDLE Collision Detection ===
 			paddle_collision_detection();
-// 			if (ball_row == 0x40)
-// 			{
-// 				// Contact with left side of paddle
-// 				if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
-// 				{
-// 					state = B_UP_LEFT;
-// 				}
-// 				// Contact with center of paddle
-// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    (((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
-// 				{
-// 					state = B_UP;
-// 				}
-// 				// Contact with right side of paddle
-// 				else if (   ((~ball_column)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>1)&(~DISPLAY_PORTB[0]))    &&    !(((~ball_column)>>2)&(~DISPLAY_PORTB[0]))    )
-// 				{
-// 					state = B_UP_RIGHT;
-// 				}
-// 				
-// 			}
 		break;
-
-
 		
 		default:
 		state = B_INIT;
