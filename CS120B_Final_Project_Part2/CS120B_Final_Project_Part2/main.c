@@ -6,10 +6,7 @@
 
 #define ARRAY_SIZE 26
 
-unsigned char FLOOR = 0x80;
-unsigned char CEILING = 0x01;
-unsigned char LEFT_WALL = 0x7F;
-unsigned char RIGHT_WALL = 0xFE;
+
 
 // ====================
 // GLOBAL SHARED VARIABLES
@@ -18,9 +15,26 @@ unsigned volatile char DISPLAY_PORTA[ARRAY_SIZE];
 unsigned volatile char DISPLAY_PORTB[ARRAY_SIZE];
 unsigned volatile char SCORE = 0; 
 
+unsigned char FLOOR = 0x80;
+unsigned char CEILING = 0x01;
+unsigned char LEFT_WALL = 0x7F;
+unsigned char RIGHT_WALL = 0xFE;
 
+unsigned char NES_SELECT = 0x01 << 2;
+unsigned char NES_START = 0x01 << 3;
+unsigned char NES_LEFT_DPAD = 0x01 << 6;
+unsigned char NES_RIGHT_DPAD = 0x01 << 7;
 
+unsigned char gameInPlay = 0x00;
+unsigned char gamePause = 0x00;
+unsigned char gameSet = 0x00; 
+unsigned char gamePlay = 0x00;
+unsigned char gameEndTurn = 0x00;
+unsigned char gameOver = 0x00;
 
+// ====================
+// TASK DECLARATIONS
+// ====================
 typedef struct task {
 	int state; // Current state of the task
 	unsigned long period; // Rate at which the task should tick
@@ -28,15 +42,16 @@ typedef struct task {
 	int (*TickFct)(int); // Function to call for task's tick
 } task;
 
-task tasks[5];
+task tasks[6];
 
-const unsigned char tasksNum = 5;
+const unsigned char tasksNum = 6;
 const unsigned long tasksPeriodGCD  = 1;
 const unsigned long periodBall = 200;
 const unsigned long periodPaddle = 50;
 const unsigned long periodOutput = 1;
 const unsigned long periodBrick = 50;
-const unsigned long periodLCDOutput = 800; // Same period as the ball
+const unsigned long periodLCDOutput = 800; // 4x ball period
+const unsigned long periodGame = 50;
 
 
 // ====================
@@ -313,6 +328,7 @@ int Ball_Tick(int state) {
 			else
 			{
 				state = B_PAUSE;
+				gameEndTurn--;
 			}
 		}
 	}
@@ -350,8 +366,7 @@ int Ball_Tick(int state) {
 				if ((DISPLAY_PORTA[i] & (ball_row >> 1)) && ((DISPLAY_PORTB[i] & ~ball_column) == 0))
 				{
 					state = B_DOWN;
-					DISPLAY_PORTA[i] = 0x00;
-					DISPLAY_PORTB[i] = 0x00;
+					turn_off_LED(i);
 					ball_collision = 0x01;
 					break;
 				}
@@ -629,7 +644,6 @@ int Ball_Tick(int state) {
 // ====================
 // BRICK_TICK: BALL MOVEMENT ON LED matrix
 // ====================
-
 enum Brick_States {BRICK_START, BRICK_INIT,BRICK_PAUSE, BRICK_DISPLAY};
 int Brick_Tick(int state) {
 	
@@ -773,7 +787,7 @@ int LED_MATRIX_OUTPUT_Tick(int state) {
 // ====================
 // LCD_OUTPUT_TICK:OUTPUT TO LED matrix
 // ====================
-enum LCD_O_States {LCD_O_START, LCD_O_INIT, LCD_O_DISPLAY_SCORE};
+enum LCD_O_States {LCD_O_START, LCD_O_INIT, LCD_O_DISPLAY_MENU, LCD_O_POST_DISPLAY_MENU, LCD_O_DISPLAY_SCORE, LCD_O_DISPLAY_GAME_OVER, LCD_O_WAIT};
 int LCD_OUTPUT_Tick(int state) {
 
 	// === Local Variables ===
@@ -789,11 +803,44 @@ int LCD_OUTPUT_Tick(int state) {
 		break;
 		
 		case LCD_O_INIT:
-			state = LCD_O_DISPLAY_SCORE;
+			state = LCD_O_DISPLAY_MENU;
+		break;
+
+		case  LCD_O_DISPLAY_MENU:
+			if (gameInPlay == 0x01)
+			{
+				state = LCD_O_DISPLAY_SCORE;
+			}
+			else
+			{
+				state = LCD_O_POST_DISPLAY_MENU;
+			}
+		break;
+
+		case LCD_O_POST_DISPLAY_MENU:
+			if (gameInPlay != 0x01)
+			{
+				state = LCD_O_POST_DISPLAY_MENU;
+			}
+			else
+			{
+				state = LCD_O_DISPLAY_SCORE;
+			}
 		break;
 
 		case LCD_O_DISPLAY_SCORE:
-			state = LCD_O_DISPLAY_SCORE;
+			if ((gameInPlay == 0x00) && (gameOver==0x00))
+			{	
+				state = LCD_O_DISPLAY_MENU;
+			}
+			else if ((gameInPlay == 0x01) && (gameOver==0x00))
+			{
+				state = LCD_O_DISPLAY_SCORE;
+			}
+			else if ((gameInPlay == 0x01) && (gameOver==0x01))
+			{
+				state = LCD_O_DISPLAY_GAME_OVER;
+			}
 		break;
 		
 		default:
@@ -809,6 +856,12 @@ int LCD_OUTPUT_Tick(int state) {
 		
 		case LCD_O_INIT:
 			LCD_ClearScreen();
+		break;
+
+		case LCD_O_DISPLAY_MENU:
+			LCD_Cursor(0x01);
+			LCD_DisplayString(1, "BRICK BREAKER!  PRESS START");
+			//LCD_DisplayString(0x10, "START TO PLAY");
 		break;
 
 		case LCD_O_DISPLAY_SCORE:
@@ -828,7 +881,7 @@ int LCD_OUTPUT_Tick(int state) {
 					}
 					SCORE_ONES_PLACE++;
 				LCD_Cursor(0x01);
-				LCD_DisplayString(1, "SCORE: ");
+				LCD_DisplayString(1, "SCORE:");
 				LCD_WriteData('0' + SCORE_HUNDREDS_PLACE);
 				LCD_WriteData('0' + SCORE_TENS_PLACE);
 				LCD_WriteData('0' + SCORE_ONES_PLACE);
@@ -838,6 +891,198 @@ int LCD_OUTPUT_Tick(int state) {
 				SCORE = PREV_SCORE;
 			}	
 		break;
+
+		case LCD_O_DISPLAY_GAME_OVER:
+			LCD_Cursor(0x01);
+			LCD_DisplayString(1, "GAME OVER!      ");
+			//LCD_DisplayString(0x10, "START TO PLAY");
+		break;
+		
+		default:
+		break;
+	}
+	return state;
+};
+
+// ====================
+// GAME_TICK:OUTPUT TO LED matrix
+// ====================
+enum G_States {G_START, G_INIT, G_MENU, G_PRE_PLAY_WAIT, G_PLAY, G_POST_PLAY_WAIT, G_PAUSE, G_POST_PAUSE_WAIT, G_SET, G_RESET, G_PRE_RESET, G_GAME_OVER};
+int GAME_Tick(int state) {
+
+	// === Local Variables ===
+	unsigned char button = GetNESControllerButton();
+	unsigned static char NumberOfTurns = 0x03;
+	unsigned static char game_over_count = 0x00; 
+	unsigned char game_over_display_time = 0x05;
+
+	// === Transitions ===
+	switch (state) {
+		case G_START:
+		state = G_INIT;
+		break;
+		
+		case G_INIT:
+			state = G_MENU;
+		break;
+
+		case G_MENU:
+			if ((button == NES_START ) && ~gameInPlay)
+			{
+				gameInPlay = 0x01;
+				state = G_PRE_PLAY_WAIT;
+			}
+		break;
+		
+		case G_PRE_PLAY_WAIT:
+			if (button == NES_START)
+			{
+				state = G_PRE_PLAY_WAIT;
+			}
+			else
+			{
+				state = G_PLAY;
+			}
+		break;
+
+		case G_PLAY:
+			state = G_POST_PLAY_WAIT;
+		break;
+
+		case G_POST_PLAY_WAIT:
+			if ((button == NES_START) && (gameEndTurn != 0x01))
+			{
+				gamePause = 0x01;
+				state = G_PAUSE;
+			}
+			else if (gameEndTurn == 0x01)
+			{
+				gameEndTurn = 0x00;
+				NumberOfTurns--;
+				if (NumberOfTurns != 0x00)
+				{
+					state = G_SET;
+				}
+				else
+				{
+					state = G_GAME_OVER;
+				}
+			}
+			else
+			{
+				 state = G_POST_PLAY_WAIT;
+			}
+		break;
+
+		case G_GAME_OVER:
+			if (game_over_count >= game_over_display_time)
+			{
+				state = G_MENU;
+				gameOver = 0x00;
+			}
+			else 
+			{
+				state = G_GAME_OVER;
+			}
+		break;
+		
+		case G_PAUSE:
+			if(button == NES_START)
+			{
+				state = G_PAUSE;
+			}
+			else
+			{
+				state = G_POST_PAUSE_WAIT;
+			}
+		break;
+
+		case G_POST_PAUSE_WAIT:
+			if (button == NES_START)
+			{
+				gamePause = 0x00;
+				state = G_PRE_PLAY_WAIT;
+			}
+		break;
+
+		case G_SET:
+			if (button == NES_START)
+			{
+				state = G_PRE_PLAY_WAIT;
+				gamePlay = 0x01;
+				gameSet = 0x00;
+				gameEndTurn = 0x00;
+			}
+		break;
+
+		case G_PRE_RESET:
+			if (button == (NES_START|NES_SELECT))
+			{
+				state = G_PRE_RESET;
+			}
+			else
+			{
+				state = G_RESET;
+			}
+		break;
+
+		case G_RESET:
+			if (button == (NES_START|NES_SELECT))
+			{
+				state = G_PRE_RESET;
+			}
+			else
+			{
+				state = G_MENU;
+				gamePlay = 0;
+			}
+		break;
+		
+		default:
+			state = G_INIT;
+		break;
+	}
+	
+	// === Actions ===
+	switch (state) {
+		case G_START:
+		break;
+		
+		case G_INIT:
+			gameInPlay = 0x00;
+			gamePause = 0x00;
+			gameSet = 0x00;
+			gamePlay = 0x00;
+			gameEndTurn = 0x00;
+		break;
+
+		case G_MENU:
+		break;
+		
+		case G_PRE_PLAY_WAIT:
+		break;
+
+		case G_PLAY:
+		break;
+
+		case G_POST_PLAY_WAIT:
+		break;
+		
+		case G_GAME_OVER:
+			gameOver = 0x01;
+		break;
+
+		case G_PAUSE:
+		break;
+
+		case G_SET:
+		break;
+
+		case G_PRE_RESET:
+		break;
+
+		case G_RESET:
+		break;
 		
 		default:
 		break;
@@ -846,6 +1091,7 @@ int LCD_OUTPUT_Tick(int state) {
 };
 
 
+// == TimerISR() ==
 void TimerISR() {
 	unsigned char i;
 	for(i = 0; i < tasksNum; ++i) { // Heart of the scheduler code
@@ -894,6 +1140,11 @@ int main() {
 	tasks[i].period = periodLCDOutput;
 	tasks[i].elapsedTime = tasks[i].period;
 	tasks[i].TickFct= &LCD_OUTPUT_Tick;
+	++i;
+	tasks[i].state = G_START;
+	tasks[i].period = periodGame;
+	tasks[i].elapsedTime = tasks[i].period;
+	tasks[i].TickFct= &GAME_Tick;
 
 	
 
@@ -904,11 +1155,10 @@ int main() {
 	   	LCD_init();
 	   	LCD_Cursor(0x01);
 		//LCD_DisplayString(1, "Systems Online.");
-		LCD_DisplayString(1, "Go to sleep now.");
+		LCD_DisplayString(1, "LOADING...");
 
 	while(1)
 	{
-		
 		while (!TimerFlag);
 		TimerFlag = 0;			
 	}
