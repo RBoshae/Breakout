@@ -26,11 +26,11 @@ unsigned char NES_LEFT_DPAD = 0x01 << 6;
 unsigned char NES_RIGHT_DPAD = 0x01 << 7;
 
 unsigned char gameInPlay = 0x00;
-unsigned char gamePause = 0x00;
-unsigned char gameSet = 0x00; 
-unsigned char gamePlay = 0x00;
+unsigned char gameInPause = 0x00;
+unsigned char gameReset = 0x00; 
 unsigned char gameEndTurn = 0x00;
 unsigned char gameOver = 0x00;
+unsigned char gameNumberOfTurns = 0x03;
 
 // ====================
 // TASK DECLARATIONS
@@ -47,17 +47,18 @@ task tasks[6];
 const unsigned char tasksNum = 6;
 const unsigned long tasksPeriodGCD  = 1;
 const unsigned long periodBall = 200;
-const unsigned long periodPaddle = 50;
+const unsigned long periodPaddle = 30;
 const unsigned long periodOutput = 1;
 const unsigned long periodBrick = 50;
-const unsigned long periodLCDOutput = 800; // 4x ball period
-const unsigned long periodGame = 50;
+const unsigned long periodLCDOutput = 200; 
+const unsigned long periodGame = 1;
 
+const unsigned short longestPeriod = 200;
 
 // ====================
 // PADDLE_TICK: PADDLE MOVEMENT ON LED matrix
 // ====================
-enum P_States {P_START, P_INIT, P_PAUSE, P_WAIT, P_MOVE_LEFT, P_MOVE_RIGHT, P_BUTTON_HOLD};
+enum P_States {P_START, P_INIT, P_START_POSITION, P_PAUSE, P_WAIT, P_MOVE_LEFT, P_MOVE_RIGHT, P_BUTTON_HOLD};
 int Paddle_Tick(int state) {
 	
 	// === Local Variables ===
@@ -67,7 +68,7 @@ int Paddle_Tick(int state) {
 
 
 	unsigned char NES_button = GetNESControllerButton();
-	
+	 
 	// === Transitions ===
 	switch (state) {
 		case P_START:
@@ -75,11 +76,15 @@ int Paddle_Tick(int state) {
 		break;
 	
 		case P_INIT:
-			state = P_WAIT;
+			state = P_START_POSITION;
+		break;
+
+		case P_START_POSITION:
+			state = P_PAUSE;
 		break;
 		
 		case P_PAUSE:
-			if (NES_button == (0x01 << 3))
+			if ((gameInPlay == 0x01) && (gameInPause == 0x00) && (gameEndTurn == 0x00) && (gameOver==0x00))
 			{
 				state = P_WAIT;
 			}
@@ -90,13 +95,25 @@ int Paddle_Tick(int state) {
 		break;
 		
 		case P_WAIT:
-			if (NES_button == (0x01 << 6))
+			if ((NES_button == NES_LEFT_DPAD)&&(gameInPlay == 0x01) && (gameInPause == 0x00) && (gameEndTurn == 0x00) && (gameOver==0x00))
 			{
 				state = P_MOVE_LEFT;
 			}
-			else if (NES_button ==  (0x01 << 7))
+			else if ((NES_button ==  NES_RIGHT_DPAD)&&(gameInPlay == 0x01) && (gameInPause == 0x00) && (gameEndTurn == 0x00) && (gameOver==0x00))
 			{
 				state = P_MOVE_RIGHT;
+			}
+			else if (((gameInPlay == 0x00) && (gameInPause == 0x01)) && (gameEndTurn == 0x00) && (gameOver==0x00))
+			{
+				state = P_PAUSE;
+			}
+			else if ((gameInPlay == 0x00) && (gameInPause == 0x00) && ((gameEndTurn == 0x01) || (gameOver==0x01)))
+			{
+				state = P_START_POSITION;
+			}
+			else if (gameReset == 0x01)
+			{
+				state = P_INIT;
 			}
 			else
 			{
@@ -113,7 +130,7 @@ int Paddle_Tick(int state) {
 		break;
 
 		case  P_BUTTON_HOLD:
-			if (NES_button)
+			if (GetNESControllerButton())
 			{
 				if (button_hold_count < 2)
 				{
@@ -149,6 +166,12 @@ int Paddle_Tick(int state) {
 		case P_INIT:
 			bottom_row = 0x80; // bottom row
 			paddle_pos = 0xF8; // controls left right movement
+		break;
+
+		case P_START_POSITION:
+			DISPLAY_PORTA[0] = 0x80; // bottom row
+			DISPLAY_PORTB[0] = 0xF8; // controls left right movement
+			state = P_PAUSE;
 		break;
 
 		case P_PAUSE:
@@ -197,7 +220,7 @@ int Paddle_Tick(int state) {
 // ====================
 // BALL_TICK: BALL MOVEMENT ON LED matrix
 // ====================
-enum B_States {B_START, B_INIT,B_PAUSE, B_UP, B_DOWN, B_UP_LEFT, B_UP_RIGHT, B_DOWN_LEFT, B_DOWN_RIGHT} state;
+enum B_States {B_START, B_INIT,B_START_POSITION, B_MISSED_PADDLE, B_PAUSE, B_UP, B_DOWN, B_UP_LEFT, B_UP_RIGHT, B_DOWN_LEFT, B_DOWN_RIGHT} state;
 
 int Ball_Tick(int state) {
 	
@@ -205,11 +228,13 @@ int Ball_Tick(int state) {
 	static unsigned char ball_row = 0x40;    // ball row
 	static unsigned char ball_column = 0xFB; // controls ball movement
 
+	static int PREVIOUS_STATE = B_UP_LEFT;
+
 	unsigned char ball_collision = 0x00;
 
 
 	
-	unsigned char NES_button = GetNESControllerButton();
+	//unsigned char NES_button = GetNESControllerButton();
 	
 	// === Local Functions ===
 	void turn_off_LED(int LED_index){
@@ -217,6 +242,7 @@ int Ball_Tick(int state) {
 		{
 			DISPLAY_PORTA[LED_index] = 0x00;
 			DISPLAY_PORTB[LED_index] = 0x00;
+			SCORE++;
 		}
 
 	}
@@ -327,8 +353,9 @@ int Ball_Tick(int state) {
 			}
 			else
 			{
-				state = B_PAUSE;
-				gameEndTurn--;
+				state = B_MISSED_PADDLE;
+ 				gameEndTurn = 0x01;
+ 				//gameInPlay = 0x00;
 			}
 		}
 	}
@@ -340,13 +367,35 @@ int Ball_Tick(int state) {
 		break;
 
 		case B_INIT:
-			state = B_PAUSE;
+			state = B_START_POSITION;
+		break;
+
+		case B_START_POSITION:
+			if ((gameInPlay == 0x01) && (gameInPause == 0x00) && (gameEndTurn == 0x00) && (gameOver==0x00))
+			{
+				state = B_UP_LEFT;
+			}
+		break;
+
+		case B_MISSED_PADDLE:
+			if ((gameInPlay == 0x00) && (gameInPause == 0x00) && (gameEndTurn == 0x00) && (gameOver==0x01))
+			{
+				state = B_START_POSITION;
+			}
+			else if ((gameInPlay == 0x00) && (gameInPause == 0x00) && (gameEndTurn == 0x01) && (gameOver==0x00))
+			{
+				state = B_START_POSITION;
+			}
 		break;
 
 		case B_PAUSE:
-			if (NES_button == (0x01 << 3))
+			if ((gameInPlay == 0x01) && (gameInPause == 0x00) && (gameEndTurn == 0x00) && (gameOver==0x00))
 			{
-				state = B_UP_LEFT;
+				state = PREVIOUS_STATE;
+			}
+			else if (gameReset == 0x01)
+			{
+				state = B_INIT;
 			}
 			else
 			{
@@ -354,36 +403,18 @@ int Ball_Tick(int state) {
 			}
 		break;
 
-		case B_UP:
-			if (ball_row == CEILING)
+		case B_UP_LEFT:			
+			if ((gameInPlay == 0x00) && (gameInPause == 0x01) && (gameEndTurn == 0x00) && (gameOver==0x00))
 			{
-				state = B_DOWN;
+				PREVIOUS_STATE = state;
+				state = B_PAUSE;
+				break;
 			}
-			// === UP Brick Collision Detection ===
-			for (int i = 2; i < ARRAY_SIZE; i++)
+			else if (gameReset == 0x01)
 			{
-				//Brick Directly Above -- works
-				if ((DISPLAY_PORTA[i] & (ball_row >> 1)) && ((DISPLAY_PORTB[i] & ~ball_column) == 0))
-				{
-					state = B_DOWN;
-					turn_off_LED(i);
-					ball_collision = 0x01;
-					break;
-				}
+				state = B_INIT;
 			}
-		break;
-
-		case B_DOWN:
-			if (ball_row == FLOOR)
-			{
-				state = B_UP;
-			}
- 			// === DOWN PADDLE Collision Detection ===
-			paddle_collision_detection(); 
-		break;
-
-		case B_UP_LEFT:
-			if ((ball_column == LEFT_WALL) && (ball_row == CEILING))
+			else if ((ball_column == LEFT_WALL) && (ball_row == CEILING))
 			{
 				state = B_DOWN_LEFT;
 			}
@@ -398,10 +429,6 @@ int Ball_Tick(int state) {
 			else if ((ball_column != LEFT_WALL) && (ball_row != CEILING))
 			{
 				state = B_UP_LEFT;
-			}
-			else
-			{
-				state = B_DOWN;  // Debugging
 			}
 
 			// === UP-LEFT Brick Collision Detection ===
@@ -430,7 +457,7 @@ int Ball_Tick(int state) {
 					// Turn hit LED off
 					turn_off_LED(i);
 					ball_collision = 0x01;
-					SCORE++;
+					//SCORE++;
 					break;
 				}
 			}
@@ -465,14 +492,24 @@ int Ball_Tick(int state) {
 						state = B_DOWN_RIGHT;
 						turn_off_LED(h);
 						break;
-						SCORE++;
+						//SCORE++;
 					}
 				}
 			}
 		break;	
 
 		case B_UP_RIGHT:
-			if ((ball_column == RIGHT_WALL) && (ball_row == CEILING))
+			if ((gameInPlay == 0x00) && (gameInPause == 0x01) && (gameEndTurn == 0x00) && (gameOver==0x00))
+			{
+				PREVIOUS_STATE = state;
+				state = B_PAUSE;
+				break;
+			}
+			else if (gameReset == 0x01)
+			{
+				state = B_INIT;
+			}
+			else if ((ball_column == RIGHT_WALL) && (ball_row == CEILING))
 			{
 				state = B_DOWN_LEFT;
 			}
@@ -502,7 +539,7 @@ int Ball_Tick(int state) {
 
 					turn_off_LED(i);
 					ball_collision = 0x01;
-					SCORE++;
+					//SCORE++;
 					break;
 				}
 			}
@@ -538,7 +575,7 @@ int Ball_Tick(int state) {
 					{
 						state = B_DOWN_LEFT;
 						turn_off_LED(k);
-						SCORE++;
+						//SCORE++;
 						break;
 					}
 				}
@@ -546,7 +583,13 @@ int Ball_Tick(int state) {
 		break;
 
 		case  B_DOWN_LEFT:
-			if ((ball_row != FLOOR) && (ball_column == LEFT_WALL))
+			if ((gameInPlay == 0x00) && (gameInPause == 0x01) && (gameEndTurn == 0x00) && (gameOver==0x00))
+			{
+				PREVIOUS_STATE = state;
+				state = B_PAUSE;
+				break;
+			}
+			else if ((ball_row != FLOOR) && (ball_column == LEFT_WALL))
 			{
 				state = B_DOWN_RIGHT;
 			}
@@ -566,7 +609,17 @@ int Ball_Tick(int state) {
 		break;
 
 		case  B_DOWN_RIGHT:
-			if ((ball_row == FLOOR) && (ball_column == RIGHT_WALL))
+			if ((gameInPlay == 0x00) && (gameInPause == 0x01) && (gameEndTurn == 0x00) && (gameOver==0x00))
+			{
+				PREVIOUS_STATE = state;
+				state = B_PAUSE;
+				break;
+			}
+			else if (gameReset == 0x01)
+			{
+				state = B_INIT;
+			}
+			else if ((ball_row == FLOOR) && (ball_column == RIGHT_WALL))
 			{
 				state = B_UP_LEFT;
 			}
@@ -596,6 +649,14 @@ int Ball_Tick(int state) {
 		case B_INIT:
 			ball_row = 0x40; // bottom row
 			ball_column = 0xFB; // controls left right movement
+		break;
+
+		case B_START_POSITION:
+			ball_row = 0x40; // bottom row
+			ball_column = 0xFB; // controls left right movement
+		break;
+		
+		case B_MISSED_PADDLE:
 		break;
 
 		case B_PAUSE:
@@ -644,15 +705,9 @@ int Ball_Tick(int state) {
 // ====================
 // BRICK_TICK: BALL MOVEMENT ON LED matrix
 // ====================
-enum Brick_States {BRICK_START, BRICK_INIT,BRICK_PAUSE, BRICK_DISPLAY};
+enum Brick_States {BRICK_START, BRICK_INIT, BRICK_WAIT, BRICK_RESET};
 int Brick_Tick(int state) {
-	
-	// === Local Variables ===
-	//static unsigned char brick_row = 0x07; // ball row
-	//static unsigned char brick_column = 0x00; // controls ball movement
-
-	unsigned char NES_button = GetNESControllerButton();
-	
+		
 	// === Transitions ===
 	switch (state) {
 		case BRICK_START:
@@ -660,25 +715,22 @@ int Brick_Tick(int state) {
 		break;
 
 		case BRICK_INIT:
-			state = BRICK_PAUSE;
+			state = BRICK_WAIT;
 		break;
 
-		case BRICK_PAUSE:
-			if (NES_button == (0x01 << 3))
+		case BRICK_WAIT:
+			if (gameReset == 0x01)
 			{
-				state = BRICK_DISPLAY;
-			}
-			else
-			{
-				state = BRICK_PAUSE;
+				state = BRICK_INIT;
 			}
 		break;
 
-		case  BRICK_DISPLAY:
+		case  BRICK_RESET:
+			state = BRICK_WAIT;
 		break;
 		
 		default:
-			state = B_INIT;
+			state = BRICK_INIT;
 		break;
 	}
 	
@@ -707,14 +759,34 @@ int Brick_Tick(int state) {
 					DISPLAY_PORTB[i] = (0x7F >> (i - 18)) | 0xFF<<(8-(i-18));
 					
 				}
-
 			}
 		break;
 
-		case BRICK_PAUSE:
+		case BRICK_WAIT:
 		break;
 
-		case BRICK_DISPLAY:
+
+		case BRICK_RESET:
+			for (int i = 2; i < ARRAY_SIZE; i++)
+			{
+				if (i < 10)
+				{
+					DISPLAY_PORTA[i] = 0x01;
+					DISPLAY_PORTB[i] = (0x7F >> (i-2)) | 0xFF<<(8-(i-2));  //Acts as a roll shift
+							
+				}
+				else if ((i >= 10) && (i < 18))
+				{
+					DISPLAY_PORTA[i] = 0x02;
+					DISPLAY_PORTB[i] = (0x7F >> (i - 10)) | 0xFF<<(8-(i-10)); //Acts as a roll shift
+				}
+				else if ((i >= 18) && (i < 26))
+				{
+					DISPLAY_PORTA[i] = 0x04;
+					DISPLAY_PORTB[i] = (0x7F >> (i - 18)) | 0xFF<<(8-(i-18));
+							
+				}
+			}
 		break;
 
 		default:
@@ -787,15 +859,18 @@ int LED_MATRIX_OUTPUT_Tick(int state) {
 // ====================
 // LCD_OUTPUT_TICK:OUTPUT TO LED matrix
 // ====================
-enum LCD_O_States {LCD_O_START, LCD_O_INIT, LCD_O_DISPLAY_MENU, LCD_O_POST_DISPLAY_MENU, LCD_O_DISPLAY_SCORE, LCD_O_DISPLAY_GAME_OVER, LCD_O_WAIT};
+enum LCD_O_States {LCD_O_START, LCD_O_INIT, LCD_O_DISPLAY_MENU, LCD_O_DISPLAY_SCORE, 
+				   LCD_O_DISPLAY_PAUSE, LCD_O_DISPLAY_TURNS_REMAINING, LCD_O_DISPLAY_GAME_OVER, LCD_O_WAIT};
 int LCD_OUTPUT_Tick(int state) {
 
 	// === Local Variables ===
-	unsigned static PREV_SCORE = 0x00;
-	unsigned static char SCORE_HUNDREDS_PLACE = 0x00;
-	unsigned static char SCORE_TENS_PLACE = 0x00;
-	unsigned static char SCORE_ONES_PLACE = 0x00;
-	unsigned static char count = 0x01;
+	static int PREV_STATE = 9;
+
+	static unsigned char PREV_SCORE = 0x00;
+	static unsigned char SCORE_HUNDREDS_PLACE = 0x00;
+	static unsigned char SCORE_TENS_PLACE = 0x00;
+	static unsigned char SCORE_ONES_PLACE = 0x00;
+	static unsigned char score_count = 0x01;
 	// === Transitions ===
 	switch (state) {
 		case LCD_O_START:
@@ -803,44 +878,62 @@ int LCD_OUTPUT_Tick(int state) {
 		break;
 		
 		case LCD_O_INIT:
-			state = LCD_O_DISPLAY_MENU;
+			state = LCD_O_WAIT;
+		break;
+
+		case LCD_O_WAIT:
+				if ((gameInPlay == 0x00) && (gameInPause == 0x00) && (gameEndTurn == 0x00) && (gameOver==0x00))
+				{
+					state = LCD_O_DISPLAY_MENU;
+				}
+				else if ((gameInPlay == 0x01) && (gameInPause == 0x00) && (gameEndTurn == 0x00) && (gameOver==0x00))
+				{
+					state = LCD_O_DISPLAY_SCORE;
+				}
+				else if ((gameInPlay == 0x00) && (gameInPause == 0x01) && (gameEndTurn == 0x00) && (gameOver==0x00))
+				{
+					state = LCD_O_DISPLAY_PAUSE;
+				}
+				else if ((gameInPlay == 0x00) && (gameInPause == 0x00) && (gameEndTurn == 0x01) && (gameOver==0x00))
+				{
+					state = LCD_O_DISPLAY_TURNS_REMAINING;
+				}
+				else if ((gameInPlay == 0x01) && (gameInPause == 0x00) && (gameEndTurn == 0x01) && (gameOver==0x00))
+				{
+					state = LCD_O_DISPLAY_TURNS_REMAINING;
+				}
+				else if (((gameInPlay == 0x00) && (gameInPause == 0x00)) && ((gameEndTurn == 0x00) || (gameOver==0x01)))
+				{
+					state = LCD_O_DISPLAY_GAME_OVER;
+				}
+				else if ((gameOver==0x01))
+				{
+					state = LCD_O_DISPLAY_GAME_OVER;
+				}
+				else if (gameReset == 0x01)
+				{
+					state = LCD_O_INIT;
+				}
+				else
+				{
+					LCD_DisplayString(1,"ERROR");
+				}
 		break;
 
 		case  LCD_O_DISPLAY_MENU:
-			if (gameInPlay == 0x01)
-			{
-				state = LCD_O_DISPLAY_SCORE;
-			}
-			else
-			{
-				state = LCD_O_POST_DISPLAY_MENU;
-			}
-		break;
-
-		case LCD_O_POST_DISPLAY_MENU:
-			if (gameInPlay != 0x01)
-			{
-				state = LCD_O_POST_DISPLAY_MENU;
-			}
-			else
-			{
-				state = LCD_O_DISPLAY_SCORE;
-			}
+			state = LCD_O_WAIT;
 		break;
 
 		case LCD_O_DISPLAY_SCORE:
-			if ((gameInPlay == 0x00) && (gameOver==0x00))
-			{	
-				state = LCD_O_DISPLAY_MENU;
-			}
-			else if ((gameInPlay == 0x01) && (gameOver==0x00))
-			{
-				state = LCD_O_DISPLAY_SCORE;
-			}
-			else if ((gameInPlay == 0x01) && (gameOver==0x01))
-			{
-				state = LCD_O_DISPLAY_GAME_OVER;
-			}
+			state = LCD_O_WAIT;
+		break;
+
+		case LCD_O_DISPLAY_TURNS_REMAINING:
+			state = LCD_O_WAIT;
+		break;
+
+		case LCD_O_DISPLAY_GAME_OVER:
+			state = LCD_O_WAIT;
 		break;
 		
 		default:
@@ -859,16 +952,19 @@ int LCD_OUTPUT_Tick(int state) {
 		break;
 
 		case LCD_O_DISPLAY_MENU:
-			LCD_Cursor(0x01);
-			LCD_DisplayString(1, "BRICK BREAKER!  PRESS START");
-			//LCD_DisplayString(0x10, "START TO PLAY");
+			if (state != PREV_STATE)
+			{
+				LCD_Cursor(0x01);
+				LCD_DisplayString(1, "BRICK BREAKER!  PRESS START");
+			}
+			PREV_STATE = state;
 		break;
 
 		case LCD_O_DISPLAY_SCORE:
-			// Express SCORE by factors of 10
-			if (SCORE != PREV_SCORE)
-			{
-					count++;
+				// Express SCORE by factors of 10
+				if (SCORE != PREV_SCORE)
+				{
+					score_count++;
 					if (SCORE_TENS_PLACE == 0x0A)
 					{
 						SCORE_HUNDREDS_PLACE++;
@@ -880,24 +976,44 @@ int LCD_OUTPUT_Tick(int state) {
 						SCORE_ONES_PLACE = 0;
 					}
 					SCORE_ONES_PLACE++;
-				LCD_Cursor(0x01);
-				LCD_DisplayString(1, "SCORE:");
-				LCD_WriteData('0' + SCORE_HUNDREDS_PLACE);
-				LCD_WriteData('0' + SCORE_TENS_PLACE);
-				LCD_WriteData('0' + SCORE_ONES_PLACE);
-				LCD_WriteData('0'); // Make the score a little bigger =P
-				LCD_Cursor(0x30);
+					LCD_Cursor(0x01);
+					LCD_DisplayString(1, "SCORE:");
+					LCD_WriteData('0' + SCORE_HUNDREDS_PLACE);
+					LCD_WriteData('0' + SCORE_TENS_PLACE);
+					LCD_WriteData('0' + SCORE_ONES_PLACE);
+					LCD_WriteData('0'); // Make the score a little bigger =P
+					LCD_Cursor(0x30);
 
-				SCORE = PREV_SCORE;
-			}	
+					SCORE = PREV_SCORE;
+				}
+			PREV_STATE = state;
+			
+		break;
+		
+		case LCD_O_DISPLAY_TURNS_REMAINING:
+
+			LCD_DisplayString(1, "TURNS LEFT:");
+			LCD_WriteData('0' + gameNumberOfTurns);
+			PREV_STATE = state;
+
 		break;
 
 		case LCD_O_DISPLAY_GAME_OVER:
 			LCD_Cursor(0x01);
 			LCD_DisplayString(1, "GAME OVER!      ");
-			//LCD_DisplayString(0x10, "START TO PLAY");
+			LCD_WriteData( '0' + gameNumberOfTurns);
+			
+			SCORE_HUNDREDS_PLACE = 0x00;
+			SCORE_TENS_PLACE = 0x00;
+			SCORE_ONES_PLACE = 0x00;
+			score_count = 0;
+
+			PREV_STATE = state;
 		break;
 		
+		case LCD_O_WAIT:
+		break;
+
 		default:
 		break;
 	}
@@ -907,135 +1023,145 @@ int LCD_OUTPUT_Tick(int state) {
 // ====================
 // GAME_TICK:OUTPUT TO LED matrix
 // ====================
-enum G_States {G_START, G_INIT, G_MENU, G_PRE_PLAY_WAIT, G_PLAY, G_POST_PLAY_WAIT, G_PAUSE, G_POST_PAUSE_WAIT, G_SET, G_RESET, G_PRE_RESET, G_GAME_OVER};
+enum G_States {G_START, G_INIT, G_MENU, G_WAIT1, G_PLAY, G_WAIT2, G_WAIT3, G_PAUSE, G_ENDTURN, G_GAME_OVER,  G_RESET};
 int GAME_Tick(int state) {
 
 	// === Local Variables ===
 	unsigned char button = GetNESControllerButton();
-	unsigned static char NumberOfTurns = 0x03;
-	unsigned static char game_over_count = 0x00; 
-	unsigned char game_over_display_time = 0x05;
+	unsigned static short game_over_count = 0; 
+	unsigned static short game_over_display_time = 3000;
+	unsigned static short reset_count = 0;
 
 	// === Transitions ===
 	switch (state) {
 		case G_START:
-		state = G_INIT;
+			state = G_INIT;
 		break;
 		
 		case G_INIT:
 			state = G_MENU;
+			gameInPlay = 0x00;
+			gameInPause = 0x00;
+			gameEndTurn = 0x00;
+			gameOver = 0x00;
+			gameReset = 0x00;
 		break;
 
 		case G_MENU:
-			if ((button == NES_START ) && ~gameInPlay)
+			if (button == NES_START)
 			{
-				gameInPlay = 0x01;
-				state = G_PRE_PLAY_WAIT;
+				state = G_WAIT1;
 			}
 		break;
 		
-		case G_PRE_PLAY_WAIT:
-			if (button == NES_START)
-			{
-				state = G_PRE_PLAY_WAIT;
-			}
-			else
+		case G_WAIT1:
+			if (button != NES_START)
 			{
 				state = G_PLAY;
 			}
 		break;
 
 		case G_PLAY:
-			state = G_POST_PLAY_WAIT;
+			state = G_WAIT2;
 		break;
 
-		case G_POST_PLAY_WAIT:
-			if ((button == NES_START) && (gameEndTurn != 0x01))
+		case G_WAIT2:
+			if (!(button == NES_START) && (gameInPlay == 0x01) && (gameOver==0x00)&& (gameInPause == 0x00) && (gameEndTurn == 0x00))
 			{
-				gamePause = 0x01;
-				state = G_PAUSE;
+				state = G_WAIT2;
 			}
-			else if (gameEndTurn == 0x01)
+			else if ((button==NES_START) && (button==NES_SELECT))
 			{
-				gameEndTurn = 0x00;
-				NumberOfTurns--;
-				if (NumberOfTurns != 0x00)
-				{
-					state = G_SET;
-				}
-				else
-				{
-					state = G_GAME_OVER;
-				}
+				state = G_RESET;
+			}
+			else if ((button == NES_START) && (gameInPlay == 0x01) && (gameOver==0x00) && (gameInPause == 0x00) && (gameEndTurn == 0x00))
+			{
+				state = G_WAIT3;
+			}
+			else if ((gameInPlay == 0x01) && (gameOver==0x00)&& (gameInPause == 0x00) && (gameEndTurn == 0x01))
+			{
+				 state = G_ENDTURN;
+				 gameNumberOfTurns--;
+			}
+			else if ((gameEndTurn == 0x01))
+			{
+				state = G_ENDTURN;
+				gameNumberOfTurns--;
+			}
+			else if ((gameOver==0x01))
+			{
+				state = G_MENU;
 			}
 			else
 			{
-				 state = G_POST_PLAY_WAIT;
+				state = G_WAIT2;
+			}
+		break;
+
+		case G_PAUSE:
+			state = G_WAIT1;
+		break;
+
+		case G_ENDTURN:
+			if ((button == NES_START) && (gameNumberOfTurns > 0x00))
+			{
+				gameInPlay = 0x01;
+				gameInPause = 0x00;
+				gameEndTurn = 0x00;
+				gameOver = 0x00;
+				state = G_WAIT1;
+			}
+			else if (gameNumberOfTurns <= 0x00)
+			{
+				gameInPlay = 0x00;
+				gameInPause = 0x00;
+				gameEndTurn = 0x00;
+				gameOver = 0x01;
+				state = G_GAME_OVER;
 			}
 		break;
 
 		case G_GAME_OVER:
 			if (game_over_count >= game_over_display_time)
 			{
-				state = G_MENU;
-				gameOver = 0x00;
+				state = G_RESET; // RESET GAME
+				gameInPlay = 0x00;
+				gameInPause = 0x00;
+				gameEndTurn = 0x00;
+				gameReset = 0x01;
+				SCORE = 0x00;
+				gameNumberOfTurns = 0x03;
+				game_over_count = 0;
 			}
 			else 
 			{
-				state = G_GAME_OVER;
+				game_over_count++;
 			}
-		break;
-		
-		case G_PAUSE:
-			if(button == NES_START)
-			{
-				state = G_PAUSE;
-			}
-			else
-			{
-				state = G_POST_PAUSE_WAIT;
-			}
-		break;
 
-		case G_POST_PAUSE_WAIT:
-			if (button == NES_START)
-			{
-				gamePause = 0x00;
-				state = G_PRE_PLAY_WAIT;
-			}
-		break;
-
-		case G_SET:
-			if (button == NES_START)
-			{
-				state = G_PRE_PLAY_WAIT;
-				gamePlay = 0x01;
-				gameSet = 0x00;
-				gameEndTurn = 0x00;
-			}
-		break;
-
-		case G_PRE_RESET:
-			if (button == (NES_START|NES_SELECT))
-			{
-				state = G_PRE_RESET;
-			}
-			else
-			{
-				state = G_RESET;
-			}
+// 				state = G_MENU; // should go to menu
+// 				gameOver = 0x00;
+// 				SCORE = 0x00;
+// 				gameNumberOfTurns = 0x03;
+// 				game_over_count = 0x0000;
 		break;
 
 		case G_RESET:
-			if (button == (NES_START|NES_SELECT))
+			if (((button != NES_START) || (button != NES_SELECT)) && (reset_count > longestPeriod + 100))
 			{
-				state = G_PRE_RESET;
+				state = G_INIT;
+				reset_count = 0;
 			}
 			else
 			{
-				state = G_MENU;
-				gamePlay = 0;
+				
+				if (reset_count == 0)
+				{	
+					LCD_DisplayString(1, "LOADING...      ");
+				}
+				reset_count++;
+				
 			}
+			
 		break;
 		
 		default:
@@ -1050,38 +1176,60 @@ int GAME_Tick(int state) {
 		
 		case G_INIT:
 			gameInPlay = 0x00;
-			gamePause = 0x00;
-			gameSet = 0x00;
-			gamePlay = 0x00;
+			gameInPause = 0x00;
 			gameEndTurn = 0x00;
+			gameOver = 0x00;
+
+			SCORE = 0x00;
+			game_over_count = 0;
 		break;
 
 		case G_MENU:
+			gameInPlay = 0x00;
+			gameInPause = 0x00;
+			gameEndTurn = 0x00;
+			gameOver = 0x00;
 		break;
 		
-		case G_PRE_PLAY_WAIT:
+		case G_WAIT1:
 		break;
 
 		case G_PLAY:
+			gameInPlay = 0x01;
+			gameInPause = 0x00;
+			gameEndTurn = 0x00;
+			gameOver = 0x00;
 		break;
 
-		case G_POST_PLAY_WAIT:
+		case G_WAIT2:
+		break;
+
+		case G_WAIT3:
 		break;
 		
+		case G_ENDTURN:
+			gameInPlay = 0x00;
+			gameInPause = 0x00;
+			gameEndTurn = 0x01;
+			gameOver = 0x00;
+		break;
+
 		case G_GAME_OVER:
-			gameOver = 0x01;
 		break;
 
 		case G_PAUSE:
-		break;
-
-		case G_SET:
-		break;
-
-		case G_PRE_RESET:
+			gameInPlay = 0x00;
+			gameInPause = 0x01;
+			gameEndTurn = 0x00;
+			gameOver = 0x00;
 		break;
 
 		case G_RESET:
+			gameInPlay = 0x00;
+			gameInPause = 0x00;
+			gameReset = 0x01;
+			gameEndTurn = 0x00;
+			SCORE = 0x00;
 		break;
 		
 		default:
