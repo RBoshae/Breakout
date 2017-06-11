@@ -1,6 +1,6 @@
 # Breakout
 
-[![N|Breakout](https://raw.githubusercontent.com/Wanderrer/Breakout/master/Breakout.PNG)](https://raw.githubusercontent.com/Wanderrer/Breakout/)
+[![N|Breakout](https://github.com/Wanderrer/Breakout/blob/master/Top%20View.JPG?raw=true)](https://raw.githubusercontent.com/Wanderrer/Breakout/)
 
 Breakout is a two-dimensional game that was influenced by Pong. The top of the screen consists of layers of bricks. A ball is bounced off a paddle, controlled by the player, and used to destroy bricks upon contact. When a brick is destroyed or the ball touches a wall the ball bounces away. The player loses a turn then the ball touches the bottom of the screen and does not make contact with the paddle. Otherwise the ball continues to bounce from the paddle.
 
