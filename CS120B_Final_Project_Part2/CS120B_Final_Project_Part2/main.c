@@ -3,8 +3,9 @@
 #include "NES_Controller.h"
 #include "timer.h"
 #include "io.c"
+#include "helper_functions.c"
 #include <avr/eeprom.h> // Used for eeprom
-#define ARRAY_SIZE 26
+#define ARRAY_SIZE 18
 
 
 
@@ -20,6 +21,8 @@ unsigned char CEILING = 0x01;
 unsigned char LEFT_WALL = 0x7F;
 unsigned char RIGHT_WALL = 0xFE;
 
+unsigned char NES_A = 0x01 << 0;
+unsigned char NES_B = 0x01 << 1;
 unsigned char NES_SELECT = 0x01 << 2;
 unsigned char NES_START = 0x01 << 3;
 unsigned char NES_UP_DPAD = 0x01 << 4;
@@ -53,7 +56,7 @@ task tasks[6];
 
 const unsigned char tasksNum = 6;
 const unsigned long tasksPeriodGCD  = 1;
-const unsigned long periodBall = 200;
+const unsigned long periodBall = 150;
 const unsigned long periodPaddle = 30;
 const unsigned long periodOutput = 1;
 const unsigned long periodBrick = 50;
@@ -464,7 +467,6 @@ int Ball_Tick(int state) {
 					// Turn hit LED off
 					turn_off_LED(i);
 					ball_collision = 0x01;
-					//SCORE++;
 					break;
 				}
 			}
@@ -499,7 +501,6 @@ int Ball_Tick(int state) {
 						state = B_DOWN_RIGHT;
 						turn_off_LED(h);
 						break;
-						//SCORE++;
 					}
 				}
 			}
@@ -546,7 +547,6 @@ int Ball_Tick(int state) {
 
 					turn_off_LED(i);
 					ball_collision = 0x01;
-					//SCORE++;
 					break;
 				}
 			}
@@ -582,7 +582,6 @@ int Ball_Tick(int state) {
 					{
 						state = B_DOWN_LEFT;
 						turn_off_LED(k);
-						//SCORE++;
 						break;
 					}
 				}
@@ -791,7 +790,6 @@ int Brick_Tick(int state) {
 				{
 					DISPLAY_PORTA[i] = 0x04;
 					DISPLAY_PORTB[i] = (0x7F >> (i - 18)) | 0xFF<<(8-(i-18));
-							
 				}
 			}
 		break;
@@ -969,6 +967,11 @@ int LCD_OUTPUT_Tick(int state) {
 			state = LCD_O_WAIT;
 		break;
 		
+		case LCD_O_DISPLAY_PAUSE:
+		 state = LCD_O_WAIT;
+		break;
+
+
 		default:
 			state = LCD_O_INIT;
 		break;
@@ -982,10 +985,6 @@ int LCD_OUTPUT_Tick(int state) {
 		
 		case LCD_O_INIT:
 			LCD_ClearScreen();
-			SCORE_HUNDREDS_PLACE = 0x00;
-			SCORE_TENS_PLACE = 0x00;
-			SCORE_ONES_PLACE = 0x00;
-			score_count = 0;
 
 		break;
 
@@ -993,7 +992,8 @@ int LCD_OUTPUT_Tick(int state) {
 			if (state != PREV_STATE)
 			{
 				LCD_Cursor(0x01);
-				LCD_DisplayString(1, "BRICK BREAKER!  PRESS START");
+				LCD_DisplayString(1, "BREAKOUT!       PRESS START");
+				LCD_Cursor(0x30);
 			}
 			PREV_STATE = state;
 		break;
@@ -1001,31 +1001,10 @@ int LCD_OUTPUT_Tick(int state) {
 		case LCD_O_DISPLAY_HIGH_SCORE:
 			if (state != PREV_STATE)
 			{
-
-				for (unsigned char high_score_index = 0;  high_score_index < HIGH_SCORE; high_score_index++ )
-				{
-					if (HIGH_SCORE_TENS_PLACE == 0x0A)
-					{
-						HIGH_SCORE_HUNDREDS_PLACE++;
-						HIGH_SCORE_TENS_PLACE = 0;
-					}
-					if (HIGH_SCORE_ONES_PLACE == 0x0A)
-					{
-						HIGH_SCORE_TENS_PLACE++;
-						HIGH_SCORE_ONES_PLACE = 0;
-					}
-					HIGH_SCORE_ONES_PLACE++;
-				}
+				
 				LCD_DisplayString(1, "HIGH SCORE:");
-				LCD_WriteData('0' + HIGH_SCORE_HUNDREDS_PLACE);
-				LCD_WriteData('0' + HIGH_SCORE_TENS_PLACE);
-				LCD_WriteData('0' + HIGH_SCORE_ONES_PLACE);
-				LCD_WriteData('0'); // Make the score a little bigger =P
+				write_score(HIGH_SCORE);
 				LCD_Cursor(0x30);
-
-				HIGH_SCORE_HUNDREDS_PLACE = 0;
-				HIGH_SCORE_TENS_PLACE = 0;
-				HIGH_SCORE_ONES_PLACE = 0;
 
 			}
 			PREV_STATE = state;
@@ -1044,30 +1023,15 @@ int LCD_OUTPUT_Tick(int state) {
 				// Express SCORE by factors of 10
 				if (SCORE != PREV_SCORE)
 				{
-					for (unsigned char score_index = 0;  score_index < SCORE; score_index++ )
-					{
-						if (SCORE_TENS_PLACE == 0x0A)
-						{
-							SCORE_HUNDREDS_PLACE++;
-							SCORE_TENS_PLACE = 0;
-						}
-						if (SCORE_ONES_PLACE == 0x0A)
-						{
-							SCORE_TENS_PLACE++;
-							SCORE_ONES_PLACE = 0;
-						}
-						SCORE_ONES_PLACE++;
-					}
 					LCD_DisplayString(1, "SCORE:");
-					LCD_WriteData('0' + SCORE_HUNDREDS_PLACE);
-					LCD_WriteData('0' + SCORE_TENS_PLACE);
-					LCD_WriteData('0' + SCORE_ONES_PLACE);
-					LCD_WriteData('0'); // Make the score a little bigger =P
-					LCD_Cursor(0x30);
+					write_score(SCORE);
 
-					SCORE_HUNDREDS_PLACE = 0;
-					SCORE_TENS_PLACE = 0;
-					SCORE_ONES_PLACE = 0;
+					
+					for (int i; i < gameNumberOfTurns; i++)
+					{
+						draw_ball(0x11 + i); // Write Special Character
+					}
+					LCD_Cursor(0x30);
 
 					if (SCORE > HIGH_SCORE)
 					{
@@ -1093,39 +1057,24 @@ int LCD_OUTPUT_Tick(int state) {
 		case LCD_O_DISPLAY_GAME_OVER:
 			LCD_DisplayString(1, "GAME OVER!      SCORE:");
 			// Express SCORE by factors of 10
-			for (unsigned char score_index = 0;  score_index < SCORE; score_index++ )
+			write_score(SCORE);
+			LCD_Cursor(0x30);
+			if (SCORE > HIGH_SCORE)
 			{
-				if (SCORE_TENS_PLACE == 0x0A)
-				{
-					SCORE_HUNDREDS_PLACE++;
-					SCORE_TENS_PLACE = 0;
-				}
-				if (SCORE_ONES_PLACE == 0x0A)
-				{
-					SCORE_TENS_PLACE++;
-					SCORE_ONES_PLACE = 0;
-				}
-				SCORE_ONES_PLACE++;
+				HIGH_SCORE&=0;
+				HIGH_SCORE|=SCORE;
+				eeprom_write_byte ((uint8_t*)46 , HIGH_SCORE );
 			}
-				LCD_WriteData('0' + SCORE_HUNDREDS_PLACE);
-				LCD_WriteData('0' + SCORE_TENS_PLACE);
-				LCD_WriteData('0' + SCORE_ONES_PLACE);
-				LCD_WriteData('0'); // Make the score a little bigger =P
-				LCD_Cursor(0x30);
-
-				SCORE_HUNDREDS_PLACE = 0;
-				SCORE_TENS_PLACE = 0; 
-				SCORE_ONES_PLACE = 0;
-
-				if (SCORE > HIGH_SCORE)
-				{
-					HIGH_SCORE&=0;
-					HIGH_SCORE|=SCORE;
-					eeprom_write_byte ((uint8_t*)46 , HIGH_SCORE );
-				}
 			PREV_STATE = state;
 		break;
 		
+		case LCD_O_DISPLAY_PAUSE:
+			LCD_DisplayString(1, "GAME PAUSED     SCORE:");
+			write_score(SCORE);
+			LCD_Cursor(0x30);
+			PREV_STATE = state;
+		break;
+
 		case LCD_O_WAIT:
 		break;
 
@@ -1138,13 +1087,15 @@ int LCD_OUTPUT_Tick(int state) {
 // ====================
 // GAME_TICK:OUTPUT TO LED matrix
 // ====================
-enum G_States {G_START, G_INIT, G_MENU, G_WAIT1, G_PLAY, G_WAIT2, G_WAIT3, G_PAUSE, G_ENDTURN, G_GAME_OVER,  G_RESET};
+enum G_States {G_START, G_INIT, G_MENU, G_WAIT1, G_PLAY, G_WAIT2, G_WAIT3, G_PAUSE, G_ENDTURN, G_GAME_OVER, G_WIN,  G_RESET};
 int GAME_Tick(int state) {
 
 	// === Local Variables ===
 	unsigned char button = GetNESControllerButton();
 	unsigned static short game_over_count = 0; 
 	unsigned static short game_over_display_time = 5000;
+	unsigned static short game_win_count = 0;
+	unsigned static short game_win_display_time = 3000;
 	unsigned static short reset_count = 0;
 
 	// === Transitions ===
@@ -1170,7 +1121,11 @@ int GAME_Tick(int state) {
 		break;
 		
 		case G_WAIT1:
-			if (button != NES_START)
+			if (button&NES_START)
+			{
+				state = G_WAIT1;
+			}
+			else if (button != NES_START)
 			{
 				state = G_PLAY;
 			}
@@ -1181,11 +1136,11 @@ int GAME_Tick(int state) {
 		break;
 
 		case G_WAIT2:
-			if (!(button == NES_START) && (gameInPlay == 0x01) && (gameOver==0x00)&& (gameInPause == 0x00) && (gameEndTurn == 0x00))
+			if ((button != NES_START) && (gameInPlay == 0x01) && (gameOver==0x00)&& (gameInPause == 0x00) && (gameEndTurn == 0x00))
 			{
 				state = G_WAIT2;
 			}
-			else if ((button==NES_START) && (button==NES_SELECT))
+			else if (button==(NES_START|NES_SELECT))
 			{
 				state = G_RESET;
 			}
@@ -1211,10 +1166,62 @@ int GAME_Tick(int state) {
 			{
 				state = G_WAIT2;
 			}
+
+			if (SCORE == 0x10)
+			{
+				if (game_win_count == 0)
+				{
+					LCD_DisplayString(1, "YOU WIN!");
+				}
+				state = G_WIN;
+			}
+
+		break;
+
+		case G_WIN:
+			if (game_win_count >= game_win_display_time)
+			{
+				if (SCORE > HIGH_SCORE)
+				{
+					HIGH_SCORE&=0;
+					HIGH_SCORE|=SCORE;
+					eeprom_write_byte ((uint8_t*)46 , HIGH_SCORE );
+				}
+				state = G_RESET; // RESET GAME
+				gameInPlay = 0x00;
+				gameInPause = 0x00;
+				gameEndTurn = 0x00;
+				gameReset = 0x01;
+				SCORE = 0x00;
+				gameNumberOfTurns = 0x03;
+				game_over_count = 0;
+			}
+			else
+			{
+				// RECORD HIGH SCORE
+				if (SCORE > HIGH_SCORE)
+				{
+					HIGH_SCORE&=0;
+					HIGH_SCORE|=SCORE;
+					eeprom_write_byte ((uint8_t*)46 , HIGH_SCORE );
+				}
+				game_win_count++;
+			}
+		break;
+
+		case G_WAIT3:
+			if ((NES_START&button) == 0x00)
+			{
+				state = G_PAUSE;
+			}
 		break;
 
 		case G_PAUSE:
-			state = G_WAIT1;
+			if (button == NES_START)
+			{
+				state = G_WAIT1;
+			}
+			
 		break;
 
 		case G_ENDTURN:
@@ -1265,16 +1272,10 @@ int GAME_Tick(int state) {
 				}
 				game_over_count++;
 			}
-
-// 				state = G_MENU; // should go to menu
-// 				gameOver = 0x00;
-// 				SCORE = 0x00;
-// 				gameNumberOfTurns = 0x03;
-// 				game_over_count = 0x0000;
 		break;
 
 		case G_RESET:
-			if (((button != NES_START) || (button != NES_SELECT)) && (reset_count > longestPeriod + 100))
+			if (/*((button != NES_START) || (button != NES_SELECT)) &&*/ (reset_count > longestPeriod + 100))
 			{
 				state = G_INIT;
 				reset_count = 0;
@@ -1323,6 +1324,13 @@ int GAME_Tick(int state) {
 			gameInPause = 0x00;
 			gameEndTurn = 0x00;
 			gameOver = 0x00;
+
+				//reset high score
+				if (button == (NES_A|NES_B|NES_SELECT))
+				{					eeprom_write_byte ((uint8_t*)46 , 0x00 );
+					HIGH_SCORE = 0x00;
+				}
+				
 		break;
 		
 		case G_WAIT1:
@@ -1349,6 +1357,9 @@ int GAME_Tick(int state) {
 		break;
 
 		case G_GAME_OVER:
+		break;
+
+		case G_WIN:
 		break;
 
 		case G_PAUSE:
@@ -1435,11 +1446,7 @@ int main() {
 	tasks[i].TickFct= &GAME_Tick;
 
 	
-	//reset high score
-// 	if (1)
-// 	{//		eeprom_write_byte ((uint8_t*)46 , 0x01 );
-// 	}
-	
+
 	HIGH_SCORE = eeprom_read_byte((uint8_t*)46);
 
  	TimerSet(tasksPeriodGCD);
@@ -1453,6 +1460,8 @@ int main() {
 
 	while(1)
 	{
+			//draw_ball();
+
 		while (!TimerFlag);
 		TimerFlag = 0;			
 	}
