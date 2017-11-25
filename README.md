@@ -27,7 +27,7 @@ License
 MIT
 
 
-   [breakout]: <https://github.com/Wanderrer/Breakout>
-   [git-repo-url]: <https://github.com/Wanderrer/Breakout.git>
-   [rick boshae]: <https://github.com/Wanderrer>
+   [breakout]: <https://github.com/rboshae/Breakout>
+   [git-repo-url]: <https://github.com/rboshae/Breakout.git>
+   [rick boshae]: <https://github.com/rboshae>
    
